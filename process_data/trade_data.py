@@ -29,7 +29,7 @@ class TradeData:
             #self.load_csv()
 
             # Load as numpy
-            self.data = np.genfromtxt(self.input_path, names="price, side, amount, time", dtype="float16, byte, float16, float32", delimiter=',',
+            self.data = np.genfromtxt(self.input_path, names="price, side, amount, time", dtype="float16, byte, float16, float64", delimiter=',',
                                    usecols=(1, 2, 3, 4), unpack=True, skip_header=1,
                                    converters={2:buy_sell_encoder, 4: getDateTimeFromISO8601String})
         # Open a Numpy thing
@@ -64,17 +64,22 @@ class TradeData:
         self.prices_at_time = []
 
         for i in self.data:
+            #print(target, i["time"])
             if i["time"] > target:
-                target += 60
-                time_steps = (previous_target-target)/60 - 1
-                self.prices_at_time.append([None]*time_steps + [i["price"]])
+                target = round_to_nearest(i["time"], seconds)
+                time_steps = int((target-previous_target)/60 )
+                self.prices_at_time += [None]*time_steps + [i["price"]]
                 previous_target = target
+                target += 60
+
+                # iterpolate over missing timesteps?
+                # do nothing?
 
 
 
 def create_small_dataset():
-    dataset = "D:\Data\Crypto\GDAX\BTC-USD.csv"
-    new_dataset_name = "BTC-USD_VERY_SHORT.csv"
+    dataset = r"D:\Data\Crypto\GDAX\BTC-USD.csv"
+    new_dataset_name = r"BTC-USD_VERY_SHORT.csv"
     dataset_out = os.path.join(r"D:\Data\Crypto\GDAX", new_dataset_name)
     dataset_small = os.path.join(r"./data", new_dataset_name)
 
@@ -86,11 +91,13 @@ def create_small_dataset():
 if __name__ == "__main__":
     #create_small_dataset()
     if True:
-        dataset_small = "./data/BTC-USD_VERY_SHORT.csv"
-        dataset_small = "./data/BTC-USD_SHORT.csv"
+        dataset_small = r"./data/BTC-USD_VERY_SHORT.csv"
+        dataset_small = r"./data/BTC-USD_SHORT.csv"
+        dataset_small = r"D:\Data\Crypto\GDAX\/BTC-USD.csv"
+
         myData = TradeData(dataset_small)
-        myData.save_np(dataset_small.replace(".csv", ".numpy"))
+        myData.save_np(dataset_small.replace(".csv", ".npy"))
         print(myData.data)
         print(myData.data[0]["price"])
         myData.generate_prices_at_time()
-        print(myData.prices_at_time())
+        print(myData.prices_at_time)

@@ -18,4 +18,4 @@ def buy_sell_encoder(s):
         return -1
 
 def round_to_nearest(number, round_by):
-    return number - (number % round_by)
+    return int(number) - (int(number) % round_by)
