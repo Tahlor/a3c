@@ -6,7 +6,7 @@ from io import StringIO
 import csv
 import os
 import shutil
-from utils import getDateTimeFromISO8601String
+from utils import *
 
 from datetime import datetime
 datetime_object = datetime.strptime('Jun 1 2005  1:33PM', '%b %d %Y %I:%M%p')
@@ -29,12 +29,12 @@ class TradeData:
             #self.load_csv()
 
             # Load as numpy
-            # ndmin=2
-            self.data = np.loadtxt(self.input_path, dtype='float16, str, float16, str', delimiter=',', usecols=(1,2,3,4), unpack=True, skiprows = 1, converters = {4: getDateTimeFromISO8601String})
-
+            self.data = np.genfromtxt(self.input_path, names="price, side, amount, time", dtype="float16, byte, float16, float32", delimiter=',',
+                                   usecols=(1, 2, 3, 4), unpack=True, skip_header=1,
+                                   converters={2:buy_sell_encoder, 4: getDateTimeFromISO8601String})
         # Open a Numpy thing
         else:
-            pass
+            self.data = numpy.load(input_path)
         return self.data
 
     def load_csv(self):
@@ -54,8 +54,23 @@ class TradeData:
             for i in self.data:
                 wr.writerow(i)
 
+    def save_np(self, output_path):
+        np.save(output_path, self.data)
+
     def generate_prices_at_time(self, seconds = 60):
-        pass
+        current_time = myData.data[0]["time"]
+        target = round_to_nearest(current_time, round_by=seconds)
+        previous_target = target
+        self.prices_at_time = []
+
+        for i in self.data:
+            if i["time"] > target:
+                target += 60
+                time_steps = (previous_target-target)/60 - 1
+                self.prices_at_time.append([None]*time_steps + [i["price"]])
+                previous_target = target
+
+
 
 def create_small_dataset():
     dataset = "D:\Data\Crypto\GDAX\BTC-USD.csv"
@@ -72,5 +87,10 @@ if __name__ == "__main__":
     #create_small_dataset()
     if True:
         dataset_small = "./data/BTC-USD_VERY_SHORT.csv"
+        dataset_small = "./data/BTC-USD_SHORT.csv"
         myData = TradeData(dataset_small)
+        myData.save_np(dataset_small.replace(".csv", ".numpy"))
         print(myData.data)
+        print(myData.data[0]["price"])
+        myData.generate_prices_at_time()
+        print(myData.prices_at_time())
