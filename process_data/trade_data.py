@@ -93,7 +93,7 @@ if __name__ == "__main__":
     if True:
         dataset_small = r"./data/BTC-USD_VERY_SHORT.csv"
         dataset_small = r"./data/BTC-USD_SHORT.csv"
-        dataset_small = r"D:\Data\Crypto\GDAX\/BTC-USD.csv"
+        dataset_small = r"./data/GDAX/BTC-USD.csv"
 
         myData = TradeData(dataset_small)
         myData.save_np(dataset_small.replace(".csv", ".npy"))
