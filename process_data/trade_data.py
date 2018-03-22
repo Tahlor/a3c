@@ -6,7 +6,7 @@ from io import StringIO
 import csv
 import os
 import shutil
-from utils import *
+from .utils import *
 
 from datetime import datetime
 datetime_object = datetime.strptime('Jun 1 2005  1:33PM', '%b %d %Y %I:%M%p')
@@ -34,7 +34,7 @@ class TradeData:
                                    converters={2:buy_sell_encoder, 4: getDateTimeFromISO8601String})
         # Open a Numpy thing
         else:
-            self.data = numpy.load(input_path)
+            self.data = np.load(self.input_path)
         return self.data
 
     def load_csv(self):

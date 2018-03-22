@@ -17,6 +17,9 @@ class Exchange:
         self.current_price = self.data[self.state]["price"]
         return self.data[self.state]
 
+    def is_terminal_state(self):
+        return self.state >= len(self.data)
+
     # not sure if this deals with rounding correctly
     def buy_security(self, coin = None, currency = None):
         assert (coin is None) != (currency is None)
