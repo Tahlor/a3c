@@ -5,7 +5,13 @@ import math
 class Exchange:
     def __init__(self, data_stream, cash = 10000, holdings = 0, actions = [-1,1]):
 
-        # Expects a list of dictionaries with the key price
+        '''
+        Expects a list of dictionaries with the key price
+            Can control network behavior with two main parameters:
+                1. how long to look back (e.g., past hour, past day, etc.)
+                2. how often to sample prices (e.g., get price every minute, get price every hour, etc.)
+                3. maybe get order book?
+        '''
         self.data = np.load(data_stream)
         self.state = 0
         self.cash = cash
