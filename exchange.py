@@ -7,7 +7,7 @@ class Exchange:
 
         # Expects a list of dictionaries with the key price
         self.data = np.load(data_stream)
-        self.state = 0
+        self.state = 1
         self.cash = cash
         self.holdings = holdings
         self.actions = actions
@@ -17,7 +17,6 @@ class Exchange:
         self.current_price = self.data[self.state]["price"]
         return self.data[self.state]
 
-    # not sure if this deals with rounding correctly
     def buy_security(self, coin = None, currency = None):
         assert (coin is None) != (currency is None)
 
@@ -40,10 +39,16 @@ class Exchange:
         self.cash += proceeds
         self.holdings -= proceeds/self.price
 
-
     def get_balances(self):
         return {"cash":self.cash, "holdings":self.holdings}
 
+    def get_value(self):
+        return self.cash + self.holdings*self.price
+
+    # maybe feed absolute price and price % change from previous state
+    def get_perc_change(self):
+        return self.current_price/self.data[self.state-1]["price"]
+        
     def interpret_action(self, action):
         # action can be a vector -1 = 1
         action = 2*(action-np.average(self.actions))/(max(self.actions)-min(self.actions))

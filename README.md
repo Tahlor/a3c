@@ -1,2 +1,2 @@
-# asc3
-Implementation of ASC3 algorithm for cryptotrading.
+# a3c
+Implementation of A3C algorithm for cryptotrading.
