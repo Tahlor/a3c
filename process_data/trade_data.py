@@ -6,11 +6,11 @@ from io import StringIO
 import csv
 import os
 import shutil
-from .utils import *
+from utils import *
 
 from datetime import datetime
 datetime_object = datetime.strptime('Jun 1 2005  1:33PM', '%b %d %Y %I:%M%p')
-
+ALL_DATA = r"..\data\BTC-USD.npy"
 
 class TradeData:
     def __init__(self, dataset_path, rows = float("inf")):
@@ -58,7 +58,7 @@ class TradeData:
         np.save(output_path, self.data)
 
     def generate_prices_at_time(self, seconds = 60):
-        current_time = myData.data[0]["time"]
+        current_time = self.data[0]["time"]
         target = round_to_nearest(current_time, round_by=seconds)
         previous_target = target
         self.prices_at_time = []
@@ -75,7 +75,9 @@ class TradeData:
                 # iterpolate over missing timesteps?
                 # do nothing?
 
-
+    # sample every ith item
+    def sample_from_data(self, freq = 100, start = 0):
+        self.data = self.data[start::freq]
 
 def create_small_dataset():
     dataset = r"D:\Data\Crypto\GDAX\BTC-USD.csv"
@@ -88,16 +90,25 @@ def create_small_dataset():
     myData.write_out(dataset_out)
     shutil.copy(dataset_out, dataset_small)
 
-if __name__ == "__main__":
-    #create_small_dataset()
+def make_data():
+    # create_small_dataset()
     if True:
-        dataset_small = r"./data/BTC-USD_VERY_SHORT.csv"
-        dataset_small = r"./data/BTC-USD_SHORT.csv"
-        dataset_small = r"./data/GDAX/BTC-USD.csv"
+        dataset_small = r"../data/BTC-USD_VERY_SHORT.csv"
+        #dataset_small = r"../data/BTC-USD_SHORT.csv"
+        #dataset_small = r"../data/GDAX/BTC-USD.csv"
 
         myData = TradeData(dataset_small)
+        myData.data = np.asarray(myData.data)
+
         myData.save_np(dataset_small.replace(".csv", ".npy"))
-        print(myData.data)
+        print((np.array(myData.data[::30])["price"]))
         print(myData.data[0]["price"])
         myData.generate_prices_at_time()
         print(myData.prices_at_time)
+
+if __name__ == "__main__":
+    make_data()
+    myData = TradeData(ALL_DATA)
+    print(myData.data[0:10][0])
+    myData.sample_from_data(freq = 100, start = 10000)
+    myData.save_np(r"../data/BTC_USD_100_FREQ.npy")
