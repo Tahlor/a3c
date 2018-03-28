@@ -1,5 +1,6 @@
 import tensorflow as tf
 
+
 class LSTMCell(tf.nn.rnn_cell.RNNCell):
     def __init__(self, state_size):
         self._state_size = state_size
