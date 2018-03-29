@@ -6,6 +6,9 @@ from process_data.utils import *
 DATA = ".\data\BTC_USD_100_FREQ.npy"
 DATA = ".\data\BTC-USD_VERY_SHORT.npy"
 
+# Observe every state, but only act every few states?
+# Delay moves by several states
+
 # other features: weight losses more (to simulate risk aversion)
 # use a 2 second delay before transactions to simulate latency
 # Does the system need to learn it can't buy more coins if it has none? E.g. we could veto these trades;
@@ -17,10 +20,18 @@ DATA = ".\data\BTC-USD_VERY_SHORT.npy"
 # New information is: holdings, cash, price, % change in price, whether it was a market buy/sell
 # If using transaction level, can also include size of order
 
+# Transaction costs
+# Impose a transaction cost for market orders?
+# OR REQUIRE the model to take limit orders
+# ACTIONS ARE LIMIT ORDERS
+
+# Instead of policy/value, we know the best move at every instant -- tell it to do that instead
+
+
 # time_interval - each state is a X second period
 
 class Exchange:
-    def __init__(self, data_stream, cash = 10000, holdings = 0, actions = [-1,1], time_interval = None):
+    def __init__(self, data_stream, cash = 10000, holdings = 0, actions = [-1,1], time_interval = None, transaction_cost = 0):
 
         '''
         Expects a list of dictionaries with the key price
@@ -34,6 +45,7 @@ class Exchange:
         self.cash = cash
         self.holdings = holdings
         self.actions = actions
+        self.transaction_cost = transaction_cost
 
         if not time_interval is None:
             print(self.data[0:30])
@@ -113,7 +125,7 @@ class Exchange:
             cost = min(self.cash, currency)
 
         self.cash -= cost
-        self.holdings -= cost/self.price
+        self.holdings -= (cost * (1-self.transaction_cost)) /self.price
 
     def sell_security(self, coin = None, currency = None):
         assert (coin is None) != (currency is None)
@@ -123,7 +135,7 @@ class Exchange:
         else:
             proceeds = min(self.holdings, coin)
 
-        self.cash += proceeds
+        self.cash += proceeds * (1-self.transaction_cost)
         self.holdings -= proceeds/self.price
 
     def get_balances(self):

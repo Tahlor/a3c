@@ -1,7 +1,5 @@
-import gym
 import sys
 import os
-import numpy as np
 import tensorflow as tf
 import itertools
 import shutil
@@ -14,12 +12,8 @@ import_path = os.path.abspath(os.path.join(current_path, "../.."))
 if import_path not in sys.path:
   sys.path.append(import_path)
 
-from lib.atari import helpers as atari_helpers
 from model import ValueEstimator, PolicyEstimator
-from policy_monitor import PolicyMonitor
 from worker import Worker
-
-from exchange import exchange
 
 tf.flags.DEFINE_string("model_dir", "/tmp/", "Directory to write Tensorboard summaries and videos to.")
 tf.flags.DEFINE_string("env", "exchange_v1.0", "Name of game")
