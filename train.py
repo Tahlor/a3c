@@ -1,24 +1,19 @@
-# import gym
 import sys
 import os
 import tensorflow as tf
-import itertools
+import numpy as np
 import shutil
 import threading
 import multiprocessing
 from inspect import getsourcefile
 from model2.model import Model
+from model2.worker import Worker
 
 current_path = os.path.dirname(os.path.abspath(getsourcefile(lambda:0)))
 import_path = os.path.abspath(os.path.join(current_path, "../.."))
 
 if import_path not in sys.path:
   sys.path.append(import_path)
-
-# from lib.atari import helpers as atari_helpers
-# from model import ValueEstimator, PolicyEstimator
-# from policy_monitor import PolicyMonitor
-# from worker import Worker
 
 from exchange import Exchange
 
@@ -71,7 +66,7 @@ with tf.Session() as sess:
         #     target_vector[0][0] = 0
         #     target_vector[0][1] = 1
 
-        av, vv, lv = sess.run([m.actions_op, m.value_op, loss], feed_dict={m.inputs_ph:input_vector, m.targets_ph:target_vector})
+        _, av, vv, lv = sess.run([optimizer, m.actions_op, m.value_op, loss], feed_dict={m.inputs_ph:input_vector, m.targets_ph:target_vector})
 
         print("Action vector:" + str(av))
         print("Value approx.: " + str(vv))

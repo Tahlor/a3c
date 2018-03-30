@@ -1,5 +1,5 @@
 import tensorflow as tf
-import numpy as np
+import tensorflow.contrib.layers as tfcl
 import sys
 sys.path.append("..")
 
@@ -7,13 +7,13 @@ sys.path.append("..")
 def fc(inputs, num_nodes, name='0', activation=tf.nn.relu):
     weights = tf.get_variable('W_' + name,
                               shape=(inputs.shape[1], num_nodes),
-                              dtype=tf.float32)
-                              # intializer=tf.contrib.layers.variance_scaling_initializer())
+                              dtype=tf.float32,
+                              initializer=tfcl.variance_scaling_initializer())
 
     bias = tf.get_variable('b_' + name,
                            shape=[num_nodes],
-                           dtype=tf.float32)
-                           # initializer=tf.contrib.layers.variance_scaling_initializer())
+                           dtype=tf.float32,
+                           initializer=tfcl.variance_scaling_initializer())
 
     net_value = tf.matmul(inputs, weights) + bias
     return activation(net_value)
@@ -28,26 +28,30 @@ class Model:
         self.actions_op = None
         self.value_op = None
         self.loss_op = None
+        self.saver = None
+        self.graph = tf.Graph()
 
         self.build_network()
 
     def build_network(self):
-        self.inputs_ph = tf.placeholder(tf.float32, shape=[1, self.input_size], name='inputs')
-        self.targets_ph = tf.placeholder(tf.float32, shape=[1], name='targets')
-        simple_network = fc(self.inputs_ph, self.layer_size)
+        with self.graph.as_default():
+            self.inputs_ph = tf.placeholder(tf.float32, shape=[1, self.input_size], name='inputs')
+            self.targets_ph = tf.placeholder(tf.float32, shape=[1], name='targets')
+            simple_network = fc(self.inputs_ph, self.layer_size)
 
-        output = simple_network
+            output = simple_network
 
-        # Approach for a discrete action space, where we can either
-        # buy or sell but don't specify an amount
-        # logits = fc(output, 2, name='logits')
-        # actions = tf.nn.softmax(logits)
+            # Approach for a discrete action space, where we can either
+            # buy or sell but don't specify an amount
+            # logits = fc(output, 2, name='logits')
+            # actions = tf.nn.softmax(logits)
 
-        # Approach for a continuous space.
-        # 'Action' is a real number in [-1,1], where
-        # -1 means 'sell everything you have',
-        # 0 means 'do nothing', and
-        # 1 means 'buy everything you can'.
-        # Exchange should know how to interpret this number.
-        self.actions_op = fc(output, 1, name='action', activation=tf.nn.tanh)
-        self.value_op = fc(output, 1, name='v')
+            # Approach for a continuous space.
+            # 'Action' is a real number in [-1,1], where
+            # -1 means 'sell everything you have',
+            # 0 means 'do nothing', and
+            # 1 means 'buy everything you can'.
+            # Exchange should know how to interpret this number.
+            self.actions_op = fc(output, 1, name='action', activation=tf.nn.tanh)
+            self.value_op = fc(output, 1, name='v')
+            self.saver = tf.train.Saver()
