@@ -28,6 +28,7 @@ class Model:
         self.actions_op = None
         self.value_op = None
         self.loss_op = None
+        self.optimizer = None
         self.saver = None
         self.graph = tf.Graph()
 
@@ -54,4 +55,10 @@ class Model:
             # Exchange should know how to interpret this number.
             self.actions_op = fc(output, 1, name='action', activation=tf.nn.tanh)
             self.value_op = fc(output, 1, name='v')
+            self.loss_op = tf.reduce_sum(self.targets_ph - self.actions_op, axis=1)
+            self.optimizer = tf.train.RMSPropOptimizer(0.01).minimize(self.loss_op)
+
+            with tf.Session(graph=self.graph) as sess:
+                sess.run(tf.global_variables_initializer())
+
             self.saver = tf.train.Saver()

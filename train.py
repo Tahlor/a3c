@@ -49,10 +49,8 @@ if not os.path.exists(CHECKPOINT_DIR):
 summary_writer = tf.summary.FileWriter(os.path.join(MODEL_DIR, "train"))
 
 m = Model()
-loss = tf.reduce_sum(m.targets_ph - m.actions_op, axis=1)
-optimizer = tf.train.RMSPropOptimizer(0.01).minimize(loss)
 
-with tf.Session() as sess:
+with tf.Session(graph=m.graph) as sess:
     sess.run(tf.global_variables_initializer())
 
     for i in range(1000):
@@ -66,12 +64,17 @@ with tf.Session() as sess:
         #     target_vector[0][0] = 0
         #     target_vector[0][1] = 1
 
-        _, av, vv, lv = sess.run([optimizer, m.actions_op, m.value_op, loss], feed_dict={m.inputs_ph:input_vector, m.targets_ph:target_vector})
+        _, av, vv, lv = sess.run([m.optimizer, m.actions_op, m.value_op, m.loss_op],
+                                 feed_dict={m.inputs_ph: input_vector, m.targets_ph: target_vector})
 
         print("Action vector:" + str(av))
         print("Value approx.: " + str(vv))
         print("Loss: " + str(lv))
         print('')
+
+exchange = Exchange(DATA)
+w = Worker(exchange, m, r'./checkpoints/model_0.ckpt', 0, 10)
+print('hi')
 
 ### THEIR STUFF ###
 # with tf.device("/cpu:0"):
