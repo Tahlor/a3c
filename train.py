@@ -56,9 +56,6 @@ saver = tf.train.Saver(keep_checkpoint_every_n_hours=0.5, max_to_keep=3)
 # Initialize model (value and policy nets)
 m = Model()
 
-loss = tf.reduce_sum(m.targets_ph - m.actions_op, axis=1)
-optimizer = tf.train.RMSPropOptimizer(0.01).minimize(loss)
-
 # Keep track of steps
 global_step = tf.Variable(0, name="global_step", trainable=False)
 
@@ -76,7 +73,7 @@ for worker_id in range(NUM_WORKERS):
     workers.append(worker)
 
 
-with tf.Session() as sess:
+with tf.Session(graph=m.graph) as sess:
     sess.run(tf.global_variables_initializer())
     coord = tf.train.Coordinator()
 
@@ -102,3 +99,26 @@ with tf.Session() as sess:
     coord.join(worker_threads)
 
 
+    # Ryan's stuff
+    for i in range(1000):
+
+        input_vector = np.random.rand(1, 10)
+        target_vector = np.random.rand(1)*2.0 - 1.0
+        # if target_vector[0][0] > 0.5:
+        #     target_vector[0][0] = 1
+        #     target_vector[0][1] = 0
+        # else:
+        #     target_vector[0][0] = 0
+        #     target_vector[0][1] = 1
+
+        _, av, vv, lv = sess.run([m.optimizer, m.actions_op, m.value_op, m.loss_op],
+                                 feed_dict={m.inputs_ph: input_vector, m.targets_ph: target_vector})
+
+        print("Action vector:" + str(av))
+        print("Value approx.: " + str(vv))
+        print("Loss: " + str(lv))
+        print('')
+
+exchange = Exchange(DATA)
+w = Worker(exchange, m, r'./checkpoints/model_0.ckpt', 0, 10)
+print('hi')
