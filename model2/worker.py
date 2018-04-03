@@ -14,8 +14,8 @@ DATA = r"../data/BTC-USD_SHORT.npy"
 DATA = r"../data/BTC_USD_100_FREQ.npy"
 
 # Each worker needs his own exchange -- needs to be some coordination to explore the exchange
-# Model should be straight up shared, right?
-
+# Train should have some logic to randomly move around the reinforcement space?
+# Make some toy data
 
 class Worker(Thread):
     def __init__(self, exchange, global_model, model_file, T, T_max, t_max=10):
@@ -24,8 +24,10 @@ class Worker(Thread):
         self.T = T
         self.T_max = T_max
         self.t_max = t_max
-        self.gamma = 0.9
         self.global_model = global_model
+
+        # Each worker has an exchange; can be reset to any state
+        self.exchange = Exchange(DATA, time_interval=60)
 
         # create thread-specific copy of global parameters
         # can load a single model because theta' and theta_v'
@@ -125,9 +127,11 @@ class Worker(Thread):
 
     def update(self, actions, rewards, sess):
         # Calculate reward
-        r = sample_value()
+        r = self.global_model.sample_value()
+
+        # Accumlate gradients at each time step
         for r in reverse(rewards):
-            R = r + discount*R
-
-
+            R = r + self.global_model.discount*R
+            self.global_model.update_policy(R, rewards, actions)
+            self.global_model.update_value(R, rewards)
 
