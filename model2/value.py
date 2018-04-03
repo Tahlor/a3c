@@ -14,3 +14,4 @@ class Value:
             value = sess.run(self.value_op, feed_dict={self.input_ph:input})
 
         return value
+

@@ -20,7 +20,7 @@ def fc(inputs, num_nodes, name='0', activation=tf.nn.relu):
 
 
 class Model:
-    def __init__(self, input_size=10, layer_size=256):
+    def __init__(self, input_size=10, layer_size=256, trainable = True):
         self.input_size = input_size
         self.layer_size = layer_size
         self.inputs_ph = None

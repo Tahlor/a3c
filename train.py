@@ -36,6 +36,9 @@ DATA = r"./data/BTC-USD_SHORT.npy"
 
 # Set the number of workers
 NUM_WORKERS = multiprocessing.cpu_count()
+NUM_WORKERS = 1
+
+
 MODEL_DIR = FLAGS.model_dir
 CHECKPOINT_DIR = os.path.join(MODEL_DIR, "checkpoints")
 
@@ -46,92 +49,56 @@ if FLAGS.reset:
 if not os.path.exists(CHECKPOINT_DIR):
   os.makedirs(CHECKPOINT_DIR)
 
+# Initialize saver
 summary_writer = tf.summary.FileWriter(os.path.join(MODEL_DIR, "train"))
+saver = tf.train.Saver(keep_checkpoint_every_n_hours=0.5, max_to_keep=3)
 
+# Initialize model (value and policy nets)
 m = Model()
+
 loss = tf.reduce_sum(m.targets_ph - m.actions_op, axis=1)
 optimizer = tf.train.RMSPropOptimizer(0.01).minimize(loss)
 
+# Keep track of steps
+global_step = tf.Variable(0, name="global_step", trainable=False)
+
+# Create workers
+workers = []
+for worker_id in range(NUM_WORKERS):
+
+    # Write summary for worker 0
+    worker_summary_writer = None
+    if worker_id == 0:
+        worker_summary_writer = summary_writer
+
+    # Initialize new workers
+    worker = Worker()
+    workers.append(worker)
+
+
 with tf.Session() as sess:
     sess.run(tf.global_variables_initializer())
+    coord = tf.train.Coordinator()
 
-    for i in range(1000):
+    # Load a previous checkpoint if it exists -- do this HERE OR IN MODEL?
+    latest_checkpoint = tf.train.latest_checkpoint(CHECKPOINT_DIR)
+    if latest_checkpoint:
+      print("Loading model checkpoint: {}".format(latest_checkpoint))
+      saver.restore(sess, latest_checkpoint)
 
-        input_vector = np.random.rand(1, 10)
-        target_vector = np.random.rand(1)*2.0 - 1.0
-        # if target_vector[0][0] > 0.5:
-        #     target_vector[0][0] = 1
-        #     target_vector[0][1] = 0
-        # else:
-        #     target_vector[0][0] = 0
-        #     target_vector[0][1] = 1
+    # Start worker threads
+    worker_threads = []
+    for worker in workers:
+      worker_fn = lambda worker=worker: worker.run(sess, coord, FLAGS.t_max)
+      t = threading.Thread(target=worker_fn)
+      t.start()
+      worker_threads.append(t)
 
-        _, av, vv, lv = sess.run([optimizer, m.actions_op, m.value_op, loss], feed_dict={m.inputs_ph:input_vector, m.targets_ph:target_vector})
+    # Start a thread for policy eval task
+    #monitor_thread = threading.Thread(target=lambda: pe.continuous_eval(FLAGS.eval_every, sess, coord))
+    #monitor_thread.start()
 
-        print("Action vector:" + str(av))
-        print("Value approx.: " + str(vv))
-        print("Loss: " + str(lv))
-        print('')
+    # Wait for all workers to finish
+    coord.join(worker_threads)
 
-### THEIR STUFF ###
-# with tf.device("/cpu:0"):
-#
-#   # Keeps track of the number of updates we've performed
-#   global_step = tf.Variable(0, name="global_step", trainable=False)
-#
-#   # Global policy and value nets
-#   with tf.variable_scope("global") as vs:
-#     policy_net = PolicyEstimator(num_outputs=len(VALID_ACTIONS))
-#     value_net = ValueEstimator(reuse=True)
-#
-#   # Global step iterator
-#   global_counter = itertools.count()
-#
-#   # Create worker graphs
-#   workers = []
-#   for worker_id in range(NUM_WORKERS):
-#     # We only write summaries in one of the workers because they're
-#     # pretty much identical and writing them on all workers
-#     # would be a waste of space
-#     worker_summary_writer = None
-#     if worker_id == 0:
-#       worker_summary_writer = summary_writer
-#
-#     worker = Worker(
-#       name="worker_{}".format(worker_id),
-#       env=make_env(),
-#       policy_net=policy_net,
-#       value_net=value_net,
-#       global_counter=global_counter,
-#       discount_factor = 0.99,
-#       summary_writer=worker_summary_writer,
-#       max_global_steps=FLAGS.max_global_steps)
-#     workers.append(worker)
-#
-#   saver = tf.train.Saver(keep_checkpoint_every_n_hours=2.0, max_to_keep=10)
-#
-#
-# with tf.Session() as sess:
-#   sess.run(tf.global_variables_initializer())
-#   coord = tf.train.Coordinator()
-#
-#   # Load a previous checkpoint if it exists
-#   latest_checkpoint = tf.train.latest_checkpoint(CHECKPOINT_DIR)
-#   if latest_checkpoint:
-#     print("Loading model checkpoint: {}".format(latest_checkpoint))
-#     saver.restore(sess, latest_checkpoint)
-#
-#   # Start worker threads
-#   worker_threads = []
-#   for worker in workers:
-#     worker_fn = lambda worker=worker: worker.run(sess, coord, FLAGS.t_max)
-#     t = threading.Thread(target=worker_fn)
-#     t.start()
-#     worker_threads.append(t)
-#
-#   # Start a thread for policy eval task
-#   monitor_thread = threading.Thread(target=lambda: pe.continuous_eval(FLAGS.eval_every, sess, coord))
-#   monitor_thread.start()
-#
-#   # Wait for all workers to finish
-#   coord.join(worker_threads)
+

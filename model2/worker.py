@@ -13,6 +13,9 @@ BTC = 0
 DATA = r"../data/BTC-USD_SHORT.npy"
 DATA = r"../data/BTC_USD_100_FREQ.npy"
 
+# Each worker needs his own exchange -- needs to be some coordination to explore the exchange
+# Model should be straight up shared, right?
+
 
 class Worker(Thread):
     def __init__(self, exchange, global_model, model_file, T, T_max, t_max=tf.Constant(10)):
@@ -93,3 +96,38 @@ class Worker(Thread):
             starting_value = exchange.get_value()
 
         return actions, rewards
+
+    def run(self, sess, coord, t_max):
+        with sess.as_default(), sess.graph.as_default():
+            #  Initial state
+            self.state = atari_helpers.atari_make_initial_state(self.sp.process(self.env.reset()))
+
+            try:
+                while not coord.should_stop():
+                    # Copy Parameters from the global networks
+                    #sess.run(self.copy_params_op)
+                    self.loadNetworkFromSnapshot()
+
+                    # Collect some experience
+                    #transitions, local_t, global_t = self.play_game(t_max, sess)
+                    actions, rewards = self.play_game(t_max, sess)
+
+                    if self.max_global_steps is not None and global_t >= self.max_global_steps:
+                        tf.logging.info("Reached global step {}. Stopping.".format(global_t))
+                        coord.request_stop()
+                        return
+
+                    # Update the global networks
+                    self.update(actions, rewards, sess)
+
+            except tf.errors.CancelledError:
+                return
+
+    def update(self, actions, rewards, sess):
+        # Calculate reward
+        r = sample_value()
+        for r in reverse(rewards):
+            R = r + discount*R
+
+
+
