@@ -90,7 +90,8 @@ class Worker(Thread):
             action = session.run(self.global_model.actions_op, feed_dict={self.global_model.inputs_ph:hp_reshaped})
 
             self.exchange.interpret_action(action)
-            R = self.exchange.get_value() - starting_value
+            current_value = self.exchange.get_value()
+            R = current_value - starting_value
 
             # Record actions
             actions.append(action)
@@ -114,7 +115,7 @@ class Worker(Thread):
                     #transitions, local_t, global_t = self.play_game(t_max, sess)
                     actions, rewards = self.play_game(sess, turns=t_max)
 
-                    if self.max_global_steps is not None and self.T >= self.max_global_steps:
+                    if self.T_max is not None and next(self.T) >= self.T_max:
                         tf.logging.info("Reached global step {}. Stopping.".format(self.T))
                         coord.request_stop()
                         return

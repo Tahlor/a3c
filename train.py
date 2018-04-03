@@ -100,25 +100,24 @@ with tf.Session(graph=m.graph) as sess:
     # Wait for all workers to finish
     coord.join(worker_threads)
 
-
     # Ryan's stuff
-    for i in range(1000):
-
-        input_vector = np.random.rand(1, 10)
-        target_vector = np.random.rand(1)*2.0 - 1.0
-        # if target_vector[0][0] > 0.5:
-        #     target_vector[0][0] = 1
-        #     target_vector[0][1] = 0
-        # else:
-        #     target_vector[0][0] = 0
-        #     target_vector[0][1] = 1
-
-        _, av, vv, lv = sess.run([m.optimizer, m.actions_op, m.value_op, m.loss_op],
-                                 feed_dict={m.inputs_ph: input_vector, m.targets_ph: target_vector})
-
-        print("Action vector:" + str(av))
-        print("Value approx.: " + str(vv))
-        print("Loss: " + str(lv))
-        print('')
+    # for i in range(1000):
+    #
+    #     input_vector = np.random.rand(1, 10)
+    #     target_vector = np.random.rand(1)*2.0 - 1.0
+    #     # if target_vector[0][0] > 0.5:
+    #     #     target_vector[0][0] = 1
+    #     #     target_vector[0][1] = 0
+    #     # else:
+    #     #     target_vector[0][0] = 0
+    #     #     target_vector[0][1] = 1
+    #
+    #     _, av, vv, lv = sess.run([m.optimizer, m.actions_op, m.value_op, m.loss_op],
+    #                              feed_dict={m.inputs_ph: input_vector, m.targets_ph: target_vector})
+    #
+    #     print("Action vector:" + str(av))
+    #     print("Value approx.: " + str(vv))
+    #     print("Loss: " + str(lv))
+    #     print('')
 
 print('hi')
