@@ -17,7 +17,6 @@ DATA = r"../data/BTC_USD_100_FREQ.npy"
 # Train should have some logic to randomly move around the reinforcement space?
 # Make some toy data
 
-
 class Worker(Thread):
     def __init__(self, exchange, global_model, T, T_max, t_max=10):
         self.exchange = exchange
