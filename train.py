@@ -51,10 +51,11 @@ if not os.path.exists(CHECKPOINT_DIR):
 
 # Initialize saver
 summary_writer = tf.summary.FileWriter(os.path.join(MODEL_DIR, "train"))
-saver = tf.train.Saver(keep_checkpoint_every_n_hours=0.5, max_to_keep=3)
+# saver = tf.train.Saver(keep_checkpoint_every_n_hours=0.5, max_to_keep=3)
 
 # Initialize model (value and policy nets)
 m = Model()
+exchange = Exchange(DATA)
 
 # Keep track of steps
 global_step = tf.Variable(0, name="global_step", trainable=False)
@@ -69,7 +70,7 @@ for worker_id in range(NUM_WORKERS):
         worker_summary_writer = summary_writer
 
     # Initialize new workers
-    worker = Worker()
+    worker = Worker(exchange, m, 0, 10)
     workers.append(worker)
 
 
@@ -81,7 +82,7 @@ with tf.Session(graph=m.graph) as sess:
     latest_checkpoint = tf.train.latest_checkpoint(CHECKPOINT_DIR)
     if latest_checkpoint:
       print("Loading model checkpoint: {}".format(latest_checkpoint))
-      saver.restore(sess, latest_checkpoint)
+      m.saver.restore(sess, latest_checkpoint)
 
     # Start worker threads
     worker_threads = []
@@ -119,6 +120,4 @@ with tf.Session(graph=m.graph) as sess:
         print("Loss: " + str(lv))
         print('')
 
-exchange = Exchange(DATA)
-w = Worker(exchange, m, r'./checkpoints/model_0.ckpt', 0, 10)
 print('hi')

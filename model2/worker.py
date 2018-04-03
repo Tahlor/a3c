@@ -18,13 +18,12 @@ DATA = r"../data/BTC_USD_100_FREQ.npy"
 
 
 class Worker(Thread):
-    def __init__(self, exchange, global_model, model_file, T, T_max, t_max=10):
+    def __init__(self, exchange, global_model, T, T_max, t_max=10):
         self.exchange = exchange
         self.t = tf.Variable(initial_value=1, trainable=False)
         self.T = T
         self.T_max = T_max
         self.t_max = t_max
-        self.gamma = 0.9
         self.global_model = global_model
 
         # create thread-specific copy of global parameters
@@ -32,9 +31,9 @@ class Worker(Thread):
         # typically share a single network, and just munge the
         # output of that network differently to get action sample
         # and state value estimate
-        self.local_model = Model()
-        self.session = tf.Session(graph=self.local_model.graph)
-        self.loadNetworkFromSnapshot(model_file)
+        # self.local_model = Model()
+        # self.session = tf.Session(graph=self.local_model.graph)
+        # self.loadNetworkFromSnapshot(model_file)
 
     def loadNetworkFromSnapshot(self, model_file):
 
