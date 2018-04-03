@@ -8,6 +8,7 @@ import multiprocessing
 from inspect import getsourcefile
 from model.model import Model
 from model.worker import Worker
+import itertools
 
 current_path = os.path.dirname(os.path.abspath(getsourcefile(lambda:0)))
 import_path = os.path.abspath(os.path.join(current_path, "../.."))
@@ -59,6 +60,7 @@ exchange = Exchange(DATA)
 
 # Keep track of steps
 global_step = tf.Variable(0, name="global_step", trainable=False)
+T = itertools.count()
 
 # Create workers
 workers = []
@@ -70,7 +72,7 @@ for worker_id in range(NUM_WORKERS):
         worker_summary_writer = summary_writer
 
     # Initialize new workers
-    worker = Worker(exchange, m, 0, 10)
+    worker = Worker(exchange, m, T, 10)
     workers.append(worker)
 
 
