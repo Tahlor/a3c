@@ -6,8 +6,8 @@ import shutil
 import threading
 import multiprocessing
 from inspect import getsourcefile
-from model2.model import Model
-from model2.worker import Worker
+from model.model import Model
+from model.worker import Worker
 
 current_path = os.path.dirname(os.path.abspath(getsourcefile(lambda:0)))
 import_path = os.path.abspath(os.path.join(current_path, "../.."))

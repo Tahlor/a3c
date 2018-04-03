@@ -1,6 +1,6 @@
 import tensorflow as tf
 import numpy as np
-from model2.lstm import LSTMCell
+from model.lstm import LSTMCell
 
 BATCH_SIZE = 1
 SEQUENCE_LENGTH = 10
