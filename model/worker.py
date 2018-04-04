@@ -73,50 +73,54 @@ class Worker(Thread):
     #
     #         #TODO: update theta and theta_v
 
-    def play_game(self, exchange=None, turns=GAME_LENGTH, starting_state=1000):
-        if exchange is None:
-            exchange = Exchange(DATA, cash=10000, holdings=0, actions=[-1, 1])
-        starting_value = exchange.cash
-        exchange.goto_state(starting_state)
+    def play_game(self, session, turns=GAME_LENGTH, starting_state=1000):
+        if self.exchange is None:
+            self.exchange = Exchange(DATA, cash=10000, holdings=0, actions=[-1, 1])
+        starting_value = self.exchange.cash
+        self.exchange.goto_state(starting_state)
         actions = []
         rewards = []
 
         # Prime e.g. LSTM
-        historical_prices = exchange.get_price_history(current_id=starting_state, n=100,
+        historical_prices = self.exchange.get_price_history(current_id=starting_state, n=self.global_model.input_size,
                                                        freq=100)  # get 100 previous prices, every 100 steps
+        hp_reshaped = historical_prices.reshape([1,10])
+
         # prime_lstm()
 
         for i in range(0, GAME_LENGTH):
             # get action prediction
-            action = np.random.randn() - .5
+            # action = np.random.randn() - .5
+            action = session.run(self.global_model.actions_op, feed_dict={self.global_model.inputs_ph:hp_reshaped})
 
-            exchange.interpret_action(action)
-            R = exchange.get_value() - starting_value
+            self.exchange.interpret_action(action)
+            current_value = self.exchange.get_value()
+            R = current_value - starting_value
 
             # Record actions
             actions.append(action)
             rewards.append(R)
-            starting_value = exchange.get_value()
+            starting_value = self.exchange.get_value()
 
         return actions, rewards
 
     def run(self, sess, coord, t_max):
         with sess.as_default(), sess.graph.as_default():
             #  Initial state
-            self.state = atari_helpers.atari_make_initial_state(self.sp.process(self.env.reset()))
+            # self.state = atari_helpers.atari_make_initial_state(self.sp.process(self.env.reset()))
 
             try:
                 while not coord.should_stop():
                     # Copy Parameters from the global networks
                     #sess.run(self.copy_params_op)
-                    self.loadNetworkFromSnapshot()
+                    # self.loadNetworkFromSnapshot()
 
                     # Collect some experience
                     #transitions, local_t, global_t = self.play_game(t_max, sess)
-                    actions, rewards = self.play_game(t_max, sess)
+                    actions, rewards = self.play_game(sess, turns=t_max)
 
-                    if self.max_global_steps is not None and global_t >= self.max_global_steps:
-                        tf.logging.info("Reached global step {}. Stopping.".format(global_t))
+                    if self.T_max is not None and next(self.T) >= self.T_max:
+                        tf.logging.info("Reached global step {}. Stopping.".format(self.T))
                         coord.request_stop()
                         return
 

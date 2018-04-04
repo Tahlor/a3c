@@ -71,7 +71,7 @@ class Exchange:
             current_id = n*freq
         elif current_id < n * freq:
             print("Initial trade id must be greater than freq * n")
-        return np.copy(self.data[::-freq]["price"])
+        return np.copy(self.data[current_id:current_id-(n*freq):-freq]["price"])
 
 
     # same as above, but can optionally define a list [0,10,50,100] of previous time steps, or a function
@@ -120,29 +120,29 @@ class Exchange:
         assert (coin is None) != (currency is None)
 
         if currency is None:
-            cost = min(self.cash, self.price * coin)
+            cost = min(self.cash, self.current_price * coin)
         else:
             cost = min(self.cash, currency)
 
         self.cash -= cost
-        self.holdings -= (cost * (1-self.transaction_cost)) /self.price
+        self.holdings += (cost * (1-self.transaction_cost)) / self.current_price
 
     def sell_security(self, coin = None, currency = None):
         assert (coin is None) != (currency is None)
 
         if coin is None:
-            proceeds = min(self.holdings, currency/self.price)
+            proceeds = min(self.holdings, currency/self.current_price)
         else:
             proceeds = min(self.holdings, coin)
 
         self.cash += proceeds * (1-self.transaction_cost)
-        self.holdings -= proceeds/self.price
+        self.holdings -= proceeds/self.current_price
 
     def get_balances(self):
         return {"cash":self.cash, "holdings":self.holdings}
 
     def get_value(self):
-        return self.cash + self.holdings*self.price
+        return self.cash + self.holdings*self.current_price
 
     # maybe feed absolute price and price % change from previous state
     def get_perc_change(self):
