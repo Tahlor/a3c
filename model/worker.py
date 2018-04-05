@@ -10,8 +10,8 @@ from model.model import Model
 GAME_LENGTH = 1000
 CASH = 10000
 BTC = 0
-DATA = r"../data/BTC-USD_SHORT.npy"
-DATA = r"../data/BTC_USD_100_FREQ.npy"
+DATA = r"./data/BTC-USD_SHORT.npy"
+DATA = r"./data/BTC_USD_100_FREQ.npy"
 
 # Each worker needs his own exchange -- needs to be some coordination to explore the exchange
 # Train should have some logic to randomly move around the reinforcement space?
@@ -19,7 +19,6 @@ DATA = r"../data/BTC_USD_100_FREQ.npy"
 
 class Worker(Thread):
     def __init__(self, exchange, global_model, T, T_max, t_max=10):
-        self.exchange = exchange
         self.t = tf.Variable(initial_value=1, trainable=False)
         self.T = T
         self.T_max = T_max
@@ -49,33 +48,6 @@ class Worker(Thread):
             self.global_model.saver.save(sess, model_file)
 
         self.local_model.saver.restore(self.session, model_file)
-
-
-
-    # placeholder implementation of the pseudocode
-    # def run(self):
-    #     while (self.T <= self.T_max):
-    #         # TODO: reset gradients (maybe handled by TF?)
-    #
-    #         t_start = tf.Variable(initial_value=self.t.value(), trainable=False)
-    #
-    #         # TODO: get state s_t
-    #         s_t = None
-    #
-    #         ### THIS MAY BE ALL WE NEED IN THE WORKER CLASS ###
-    #         while self.t - t_start < self.t_max and not self.exchange.is_terminal_state():
-    #             # TODO: take action a_t according to policy; should return reward and new state
-    #             self.t += 1
-    #             self.T += 1
-    #
-    #         R = 0 if self.exchange.is_terminal_state() else value(s_t, theta_prime_v)
-    #
-    #         for i in range(self.t.value()-1, t_start.value(), -1):
-    #             R = self.exchange.get_reward(s_t) + self.gamma * R
-    #             # TODO: gradients for theta_prime
-    #             # TODO: gradients for theta_prime_v
-    #
-    #         #TODO: update theta and theta_v
 
     def play_game(self, sess, turns=GAME_LENGTH, starting_state=1000):
         if self.exchange is None:

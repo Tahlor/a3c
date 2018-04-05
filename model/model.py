@@ -62,16 +62,15 @@ class Model:
             inputs = tf.split(self.inputs_ph, self.input_size, axis=1)
 
             if self.naive:
-                network = fc(self.inputs_ph, self.layer_size)
+                outputs = fc(self.inputs_ph, self.layer_size)
             else:
                 gru_cells = get_gru(self.num_layers, self.layer_size)
                 multi_cell = tf.nn.rnn_cell.MultiRNNCell(gru_cells)
                 initial_state = multi_cell.zero_state(batch_size=1, dtype=tf.float32)
 
                 with tf.variable_scope('rnn_decoder') as scope:
-                    outputs, final_state = seq2seq.rnn_decoder(inputs, initial_state, multi_cell)
-
-                network = final_state
+                    output_list, final_state = seq2seq.rnn_decoder(inputs, initial_state, multi_cell)
+                    outputs = tf.concat(output_list, axis=0)
 
             # Approach for a discrete action space, where we can either
             # buy or sell but don't specify an amount
@@ -84,8 +83,8 @@ class Model:
             # 0 means 'do nothing', and
             # 1 means 'buy everything you can'.
             # Exchange should know how to interpret this number.
-            self.actions_op = fc(network[0], 1, name='action', activation=tf.nn.tanh)
-            self.value_op = fc(network[0], 1, name='v')
+            self.actions_op = fc(outputs, 1, name='action', activation=tf.nn.tanh)
+            self.value_op = fc(outputs, 1, name='v')
             self.loss_op = tf.reduce_sum(self.targets_ph - self.actions_op, axis=1)
             self.optimizer = tf.train.RMSPropOptimizer(0.01).minimize(self.loss_op)
 
