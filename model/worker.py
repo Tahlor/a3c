@@ -25,6 +25,10 @@ class Worker(Thread):
         self.T_max = T_max
         self.t_max = t_max
         self.global_model = global_model
+        #self.model = Model(**global_model.get_params()) # build model based on global model params
+
+        # For now, just interface with main model
+        self.model = self.global_model
 
         # Each worker has an exchange; can be reset to any state
         self.exchange = Exchange(DATA, time_interval=60)
@@ -73,14 +77,15 @@ class Worker(Thread):
     #
     #         #TODO: update theta and theta_v
 
-    def play_game(self, session, turns=GAME_LENGTH, starting_state=1000):
+    def play_game(self, sess, turns=GAME_LENGTH, starting_state=1000):
         if self.exchange is None:
             self.exchange = Exchange(DATA, cash=10000, holdings=0, actions=[-1, 1])
         starting_value = self.exchange.cash
         self.exchange.goto_state(starting_state)
         actions = []
         rewards = []
-
+        values = []
+        states = []
         # Prime e.g. LSTM
         historical_prices = self.exchange.get_price_history(current_id=starting_state, n=self.global_model.input_size,
                                                        freq=100)  # get 100 previous prices, every 100 steps
@@ -91,18 +96,19 @@ class Worker(Thread):
         for i in range(0, GAME_LENGTH):
             # get action prediction
             # action = np.random.randn() - .5
-            action = session.run(self.global_model.actions_op, feed_dict={self.global_model.inputs_ph:hp_reshaped})
+            value, action = self.model.get_both(sess, hp_reshaped)
 
             self.exchange.interpret_action(action)
             current_value = self.exchange.get_value()
             R = current_value - starting_value
 
             # Record actions
+            values.append(value)
             actions.append(action)
             rewards.append(R)
             starting_value = self.exchange.get_value()
-
-        return actions, rewards
+            states.append(self.model.get_state()) # returns hidden/cell states, need to combine with input state
+        return actions, rewards, values
 
     def run(self, sess, coord, t_max):
         with sess.as_default(), sess.graph.as_default():
@@ -125,18 +131,16 @@ class Worker(Thread):
                         return
 
                     # Update the global networks
-                    self.update(actions, rewards, sess)
+                    self.update(sess, actions, rewards, values)
 
             except tf.errors.CancelledError:
                 return
 
-    def update(self, actions, rewards, sess):
+    def update(self, sess, actions, rewards, values):
         # Calculate reward
         r = self.global_model.sample_value()
 
         # Accumlate gradients at each time step
-        for r in reverse(rewards):
+        for n, r in enumerate(rewards[::-1]):
             R = r + self.global_model.discount*R
-            self.global_model.update_policy(R, rewards, actions)
-            self.global_model.update_value(R, rewards)
-
+            advantage = (R - values[::-1][n])
