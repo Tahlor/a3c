@@ -94,38 +94,55 @@ class Model:
 
             self.saver = tf.train.Saver()
 
-    def update_policy(R, rewards, actions):
+    def update_policy(self, actions, advantages):
+        # Action -- needs to output
+        #log(1 + exp(x))
 
-        self.entropy = tf.reduce_sum(-1/2 * (tf.log(2*self.action * self.sd ** 2) + 1), 1, name="entropy") # if multiple dimensions, reduce to one
+        # Actions [n steps, # of actions, 2 (action, sd)]
 
-        self.losses = - (tf.log(actions) * self.targets + self.entropy_weight * self.entropy)
-        self.loss = tf.reduce_sum(self.losses, name="loss")
+        # Vector of continuous probabilites for each action
+        # Vector of covariances for each action
+
+        sds = actions[:,:,1]
+        action_vectors = actions[:,:,0] # n steps, by 1 action
+
+        # Calculate entropy
+        entropy = -1/2 * (tf.log(2*action_vectors * math.pi * sds ** 2) + 1) # N steps X # of actions
+
+        # Advantages just an N list
+        # Action Vectors N X # of actions
+        # Entropy N X # of actions
+        self.policy_losses = - (tf.log(action_vectors) * advantages + self.entropy_weight * entropy)
+        self.policy_loss = tf.reduce_sum(self.policy_losses, name="policy_loss")
 
         #self.optimizer = tf.train.AdamOptimizer(1e-4)
         self.optimizer = tf.train.RMSPropOptimizer(0.00025, 0.99, 0.0, 1e-6)
-        self.grads_and_vars = self.optimizer.compute_gradients(self.loss)
-        self.grads_and_vars = [[grad, var] for grad, var in self.grads_and_vars if grad is not None]
-        self.train_op = self.optimizer.apply_gradients(self.grads_and_vars, global_step=tf.contrib.framework.get_global_step())
+        self.policy_grads_and_vars = self.optimizer.compute_gradients(self.policy_loss)
+        self.policy_grads_and_vars = [[grad, var] for grad, var in self.policy_grads_and_vars if grad is not None]
+        self.policy_train_op = self.optimizer.apply_gradients(self.policy_grads_and_vars, global_step=tf.contrib.framework.get_global_step())
+
+    def update_value(self, advantages):
+        self.value_losses = (advantages)**2
+        self.value_loss = tf.reduce_sum(self.value_losses, name="value_loss")
+
+        #self.optimizer = tf.train.AdamOptimizer(1e-4)
+        self.optimizer = tf.train.RMSPropOptimizer(0.00025, 0.99, 0.0, 1e-6)
+        self.value_grads_and_vars = self.optimizer.compute_gradients(self.value_loss)
+        self.value_grads_and_vars = [[grad, var] for grad, var in self.value_grads_and_vars if grad is not None]
+        self.value_train_op = self.optimizer.apply_gradients(self.value_grads_and_vars, global_step=tf.contrib.framework.get_global_step())
+
 
     def get_state(self):
-        # needs to return Cell Vector, Hidden Vector
-        return 0
+        return self.gru_state
 
-    def get_both(self, sess, input):
+    def get_value(self, sess, input, gru_state):
         #session.run(self.global_model.actions_op, feed_dict={self.global_model.inputs_ph: hp_reshaped})
         with tf.Session() as sess:
-            value, action = sess.run([self.value_op, self.action_op], feed_dict={self.input_ph: input})
-        return value, action
+            value = sess.run(self.value_op, feed_dict={self.input_ph: input, self.gru_state_input: gru_state})
+        return value, gru_state
 
-
-    def get_value(self, sess, input):
-        #session.run(self.global_model.actions_op, feed_dict={self.global_model.inputs_ph: hp_reshaped})
+    def get_policy(self, sess, input, gru_state):
         with tf.Session() as sess:
-            value = sess.run(self.value_op, feed_dict={self.input_ph: input})
-        return value
-
-    def get_policy(self, sess, input):
-        with tf.Session() as sess:
-            policy = sess.run(self.policy_op, feed_dict={self.input_ph: input})
-        return policy
+            policy = sess.run(self.policy_op, feed_dict={self.input_ph: input, self.gru_state_input: gru_state})
+        return policy, gru_state
 

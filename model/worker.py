@@ -87,7 +87,7 @@ class Worker(Thread):
         values = []
         states = []
         # Prime e.g. LSTM
-        historical_prices = self.exchange.get_price_history(current_id=starting_state, n=self.global_model.input_size,
+        historical_prices = self.exchange.get_price_history(current_id=starting_state, n=self.model.input_size,
                                                        freq=100)  # get 100 previous prices, every 100 steps
         hp_reshaped = historical_prices.reshape([1,10])
 
@@ -123,7 +123,7 @@ class Worker(Thread):
 
                     # Collect some experience
                     #transitions, local_t, global_t = self.play_game(t_max, sess)
-                    actions, rewards = self.play_game(sess, turns=t_max)
+                    actions, rewards, values = self.play_game(sess, turns=t_max)
 
                     if self.T_max is not None and next(self.T) >= self.T_max:
                         tf.logging.info("Reached global step {}. Stopping.".format(self.T))
@@ -138,9 +138,13 @@ class Worker(Thread):
 
     def update(self, sess, actions, rewards, values):
         # Calculate reward
-        r = self.global_model.sample_value()
+        r = self.model.sample_value()
 
         # Accumlate gradients at each time step
         for n, r in enumerate(rewards[::-1]):
-            R = r + self.global_model.discount*R
+            R = r + self.model.discount*R
             advantage = (R - values[::-1][n])
+
+        model.update_policy()
+        model.update_value()
+
