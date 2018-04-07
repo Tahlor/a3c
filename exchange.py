@@ -70,9 +70,9 @@ class Exchange:
     def generate_log_prices(self):
         # create log prices
         # current price - previous price
-        self.price_changes = math.log(self.data[:]["price"]) * 1000
+        self.price_changes = np.log(self.data[:]["price"]) * 1000.
         self.price_changes = self.price_changes[1:] - self.price_changes[:-1]
-        self.price_changes = np.insert(self.price_changes, 0,0) # no change for first state
+        self.price_changes = np.insert(self.price_changes, 0, 0) # no change for first state
 
     def get_next_state(self):
         self.state += 1

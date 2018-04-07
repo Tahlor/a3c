@@ -8,22 +8,24 @@ sys.path.append("..")
 # import model.value
 # import model.policy
 
+
 def fc(inputs, num_nodes, name='0', activation=tf.nn.relu):
-    weights = tf.get_variable('W_' + name,
-                              shape=(inputs.shape[1], num_nodes),
-                              dtype=tf.float32,
-                              initializer=tfcl.variance_scaling_initializer())
+    with tf.variable_scope('fully_connected', reuse=tf.AUTO_REUSE) as scope:
+        weights = tf.get_variable('W_' + name,
+                                  shape=(inputs.shape[1], num_nodes),
+                                  dtype=tf.float32,
+                                  initializer=tfcl.variance_scaling_initializer())
 
-    bias = tf.get_variable('b_' + name,
-                           shape=[num_nodes],
-                           dtype=tf.float32,
-                           initializer=tfcl.variance_scaling_initializer())
+        bias = tf.get_variable('b_' + name,
+                               shape=[num_nodes],
+                               dtype=tf.float32,
+                               initializer=tfcl.variance_scaling_initializer())
 
-    net_value = tf.matmul(inputs, weights) + bias
-    if activation is None:
-        return net_value
-    else:
-        return activation(net_value)
+        net_value = tf.matmul(inputs, weights) + bias
+        if activation is None:
+            return net_value
+        else:
+            return activation(net_value)
 
 def fc_list(inputs, num_nodes, name='0', activation=tf.nn.relu):
     outputs = []
@@ -43,7 +45,7 @@ def get_gru(num_layers, state_dim, reuse=False):
 
 
 class Model:
-    def __init__(self, batch_size=100, input_size=10, num_layers=1, layer_size=256, trainable = True, discount = .9, naive=False):
+    def __init__(self, batch_size=1, input_size=10, num_layers=1, layer_size=256, trainable = True, discount = .9, naive=False):
         self.batch_size = batch_size
         self.input_size = input_size
         self.num_layers = num_layers
@@ -70,22 +72,20 @@ class Model:
     def build_network(self):
         with self.graph.as_default():
             self.inputs_ph = tf.placeholder(tf.float32, shape=[self.batch_size, self.input_size], name='inputs')
-            self.targets_ph = tf.placeholder(tf.float32, shape=[self.batch_size], name='targets')
+            self.targets_ph = tf.placeholder(tf.float32, shape=[self.batch_size, self.input_size], name='targets')
+
+            inputs = tf.split(self.inputs_ph, self.input_size, axis=1)
 
             if self.naive:
-                outputs = fc(self.inputs_ph, self.layer_size)
-                self.actions_op = fc(outputs, 1, name='action', activation=tf.nn.tanh)
-                self.value_op = fc(outputs, 1, name='value', activation=None)
+                output_list = fc_list(self.inputs_ph, self.layer_size)
 
             else:
-                inputs = tf.split(self.inputs_ph, self.input_size, axis=1)
                 gru_cells = get_gru(self.num_layers, self.layer_size)
                 multi_cell = tf.nn.rnn_cell.MultiRNNCell(gru_cells)
                 initial_state = multi_cell.zero_state(batch_size=self.batch_size, dtype=tf.float32)
 
                 with tf.variable_scope('rnn_decoder') as scope:
                     output_list, final_state = seq2seq.rnn_decoder(inputs, initial_state, multi_cell)
-
 
             # Approach for a discrete action space, where we can either
             # buy or sell but don't specify an amount
@@ -100,12 +100,12 @@ class Model:
             # Exchange should know how to interpret this number.
 
             # Actions distribution
-            self.actions_op = fc_list(output_list, self.number_of_actions * 2, name='action', activation=None).reshape(self.number_of_actions, 2) # return N X 1 X 2
+            self.actions_op = fc_list(output_list, self.batch_size * self.number_of_actions * 2, name='action', activation=None).reshape(self.number_of_actions, 2) # return batch X t X 1 X 2
             self.action_mus = tf.nn.tanh    ( self.actions_op[:,:,0] )
             self.action_sds = tf.nn.softplus( self.actions_op[:,:,1] )
 
             # Value
-            self.value_op = fc_list(output_list, 1, name='v')
+            self.value_op = fc_list(output_list, 1, name='value', activation=None)
 
             self.loss_op = tf.reduce_sum(self.targets_ph - self.actions_op, axis=1)
             self.optimizer = tf.train.RMSPropOptimizer(0.01).minimize(self.loss_op)
@@ -128,28 +128,30 @@ class Model:
 
         # Actions [batch size, t steps, # of actions, 2 (action, sd)]
         # chosen actions = [ batch size=1 * t ]
+        # chosen rewards = [ batch size=1 * t ]
+        # value_op = [batch_size, t]
+        # actions_mus    = [batch, t, # of actions]
 
         # Vector of continuous probabilites for each action
         # Vector of covariances for each action
-        action_dist = tf.contrib.distributions.Normal(self.action_mus, self.action_sds) # this is t X 1 action
+
+        action_dist = tf.contrib.distributions.Normal(self.action_mus, self.action_sds) # [batch, t, # of actions]
 
         # Get log prob given chosen actions
-        log_prob = action_dist.log_prob(chosen_actions)
-
-        # Advantage function
-        advantage = tf.subtract(self.rewards, self.value_op, name='advantage')
+        log_prob = action_dist.log_prob(chosen_actions) # probability < 1 , so negative value here
 
         # Calculate entropy
-        #entropy = -1/2 * (tf.log(2*self.action_mus * math.pi * self.action_sds ** 2) + 1) # N steps X # of actions
-        entropy = log_prob.entropy()
+        # entropy = -1/2 * (tf.log(2*self.action_mus * math.pi * self.action_sds ** 2) + 1) # N steps X # of actions
+        entropy = log_prob.entropy() # [batch, t, # of actions], negative
 
-        # Advantages just an N list
-        # Action Vectors N X # of actions
-        # Entropy N X # of actions
-        self.policy_losses = - (tf.log(action_vectors) * advantages + self.entropy_weight * entropy)
-        self.policy_loss = tf.reduce_sum(self.policy_losses, name="policy_loss")
+        # Advantage function
+        advantage = tf.subtract(self.rewards, self.value_op, name='advantage')  #[ batch size=1 * t ]
 
-        #self.optimizer = tf.train.AdamOptimizer(1e-4)
+        # Loss -- entropy is higher with high uncertainty -- ensures exploration at first,
+        #  e.g. even if an OK path is found at first, high entropy => higher loss, so it will take
+        #   that good path with a grain of salt
+        self.policy_loss =  -tf.reduce_mean(log_prob * advantage + entropy * self.entropy_weight)
+
         self.optimizer = tf.train.RMSPropOptimizer(0.00025, 0.99, 0.0, 1e-6)
         self.policy_grads_and_vars = self.optimizer.compute_gradients(self.policy_loss)
         self.policy_grads_and_vars = [[grad, var] for grad, var in self.policy_grads_and_vars if grad is not None]
@@ -158,24 +160,24 @@ class Model:
 
 
 ## TEMP
-    mu, sigma, self.v, self.a_params, self.c_params = self._build_net(
-        scope)  # get mu and sigma of estimated action from neural net
-
-    td = tf.subtract(self.v_target, self.v, name='TD_error')
-    with tf.name_scope('c_loss'):
-        self.c_loss = tf.reduce_mean(tf.square(td))
-
-    with tf.name_scope('wrap_a_out'):
-        mu, sigma = mu * A_BOUND[1], sigma + 1e-4
-
-    normal_dist = tf.contrib.distributions.Normal(mu, sigma)
-
-    with tf.name_scope('a_loss'):
-        log_prob = normal_dist.log_prob(self.a_his)
-        exp_v = log_prob * td
-        entropy = normal_dist.entropy()  # encourage exploration
-        self.exp_v = ENTROPY_BETA * entropy + exp_v
-        self.a_loss = tf.reduce_mean(-self.exp_v)
+    # mu, sigma, self.v, self.a_params, self.c_params = self._build_net(
+    #     scope)  # get mu and sigma of estimated action from neural net
+    #
+    # td = tf.subtract(self.v_target, self.v, name='TD_error')
+    # with tf.name_scope('c_loss'):
+    #     self.c_loss = tf.reduce_mean(tf.square(td))
+    #
+    # with tf.name_scope('wrap_a_out'):
+    #     mu, sigma = mu * A_BOUND[1], sigma + 1e-4
+    #
+    # normal_dist = tf.contrib.distributions.Normal(mu, sigma)
+    #
+    # with tf.name_scope('a_loss'):
+    #     log_prob = normal_dist.log_prob(self.a_his)
+    #     exp_v = log_prob * td
+    #     entropy = normal_dist.entropy()  # encourage exploration
+    #     self.exp_v = ENTROPY_BETA * entropy + exp_v
+    #     self.a_loss = tf.reduce_mean(-self.exp_v)
 
 
 
@@ -189,7 +191,7 @@ class Model:
         self.value_grads_and_vars = [[grad, var] for grad, var in self.value_grads_and_vars if grad is not None]
         self.value_train_op = self.optimizer.apply_gradients(self.value_grads_and_vars, global_step=tf.contrib.framework.get_global_step())
 
-    tf.contrib.distributions.Normal(1,1).log_prob()
+    # tf.contrib.distributions.Normal(1.,1.).log_prob()
 
     def get_state(self):
         return self.last_input_state, self.gru_state
