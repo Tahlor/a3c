@@ -74,7 +74,7 @@ for worker_id in range(NUM_WORKERS):
     worker = Worker(exchange, m, T, 10)
     workers.append(worker)
 
-
+# Have each worker somewhat randomly hop around to different dates
 with tf.Session(graph=m.graph) as sess:
     sess.run(tf.global_variables_initializer())
     coord = tf.train.Coordinator()

@@ -46,15 +46,38 @@ class Exchange:
         self.holdings = holdings
         self.actions = actions
         self.transaction_cost = transaction_cost
+        self.generate_log_prices()
 
         if not time_interval is None:
             print(self.data[0:30])
             self.generate_prices_at_time(time_interval)
             self.data = self.prices_at_time
 
+    def get_model_input(self, range = None, exogenous = True):
+        if range is None:
+            range = [self.state]
+
+        # This can be batched
+        if exogenous:
+            prices = math.log(self.data[slice(*range)]["price"])
+            position = self.data[slice(*range)]["side"]
+
+            ### FINISH
+            return (broadcasted version of this)
+        else:
+            return self.price_change, self.holdings, self.cash, self.data[self.state]["side"]
+
+    def generate_log_prices(self):
+        # create log prices
+        # current price - previous price
+        self.price_changes = math.log(self.data[:]["price"]) * 1000
+        self.price_changes = self.price_changes[1:] - self.price_changes[:-1]
+        self.price_changes = np.insert(self.price_changes, 0,0) # no change for first state
+
     def get_next_state(self):
         self.state += 1
         self.current_price = self.data[self.state]["price"]
+        self.price_change = self.price_changes[self.state]
         return self.data[self.state]
 
     def goto_state(self, state):
@@ -149,9 +172,7 @@ class Exchange:
         return self.current_price/self.data[self.state-1]["price"]
         
     # needs to be a value between -1 and 1
-    def interpret_action(self, action, continuous = True):
-
-        sd = .1
+    def interpret_action(self, action, sd, continuous = True):
         # this normalizes action to [min, max]
         if continuous:
             action = 2*(action-np.average(self.actions))/(max(self.actions)-min(self.actions))
@@ -161,6 +182,7 @@ class Exchange:
             self.sell_security(coin = self.holdings * abs(action))
         elif action > 0:
             self.buy_security(currency = self.cash * abs(action))
+        return action
 
     def sample_from_action(self, mean = 0, sd = 1):
         sample = np.random.normal(mean, sd)

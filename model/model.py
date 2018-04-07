@@ -93,6 +93,13 @@ class Model:
 
             self.saver = tf.train.Saver()
 
+
+    #### FINISH
+    ## need to take in everything and find the tensorflow mapping for gradient calculation
+    ## Attempt to batch everything
+    ## Figure out how to work in "chosen action"
+    ## Calculate advantages
+
     def update_policy(self, chosen_actions, inputs):
         # Action -- needs to output
         #log(1 + exp(x))
