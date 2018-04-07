@@ -99,12 +99,15 @@ class Model:
             # 1 means 'buy everything you can'.
             # Exchange should know how to interpret this number.
 
-            # Actions distribution
-            self.actions_op = fc_list(output_list, self.batch_size * self.number_of_actions * 2, name='action', activation=None).reshape(self.number_of_actions, 2) # return batch X t X 1 X 2
-            self.action_mus = tf.nn.tanh    ( self.actions_op[:,:,0] )
-            self.action_sds = tf.nn.softplus( self.actions_op[:,:,1] )
+            # Actions distribution: [batch_size x input_size x number_of_actions x 2]
+            # i.e. one mu and one standard deviation for each action at each step of each sequence
+            actions_raw = fc_list(output_list, self.number_of_actions * 2, name='action', activation=None)
+            self.actions_op = tf.reshape(actions_raw, [self.batch_size, self.input_size, self.number_of_actions, 2])
+            self.action_mu = tf.nn.tanh(self.actions_op[:, :, :, 0])
+            self.action_sd = tf.nn.softplus(self.actions_op[:, :, :, 1])
 
-            # Value
+            # Value: [batch_size x input_size]
+            # i.e. one value per step in the sequence, for all sequences
             self.value_op = fc_list(output_list, 1, name='value', activation=None)
 
             self.loss_op = tf.reduce_sum(self.targets_ph - self.actions_op, axis=1)

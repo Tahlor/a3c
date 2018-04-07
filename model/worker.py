@@ -18,7 +18,7 @@ DATA = r"./data/BTC_USD_100_FREQ.npy"
 # Make some toy data
 
 class Worker(Thread):
-    def __init__(self, exchange, global_model, T, T_max, t_max=10, deep_model = True, states_to_prime = 1000):
+    def __init__(self, global_model, T, T_max, t_max=10, deep_model = True, states_to_prime = 1000):
         self.t = tf.Variable(initial_value=1, trainable=False)
         self.T = T
         self.T_max = T_max
@@ -109,9 +109,9 @@ class Worker(Thread):
 
         else:
             # Prime GRU
-            input_tensor = self.exchange.get_model_input([starting_state - self.states_to_prime], True)
+            input_tensor = self.exchange.get_model_input(price_range=[starting_state - self.states_to_prime], exogenous=True)
             self.prime_gru(input_tensor)
-            input_tensor = self.exchange.get_model_input([starting_state,starting_state+GAME_LENGTH], True) # GAME LENGTH X INPUT SIZE
+            input_tensor = self.exchange.get_model_input(price_range=[starting_state, starting_state+GAME_LENGTH], exogenous=True)  # GAME LENGTH X INPUT SIZE
 
 
         # We could do the full GRU training in one shot if the input doesn't depend on our actions

@@ -53,17 +53,21 @@ class Exchange:
             self.generate_prices_at_time(time_interval)
             self.data = self.prices_at_time
 
-    def get_model_input(self, range = None, exogenous = True):
-        if range is None:
-            range = [self.state]
+    def get_model_input(self, batch_size=1, price_range=None, exogenous=True):
+        if price_range is None:
+            price_range = [self.state]
 
         # This can be batched
         if exogenous:
-            prices = math.log(self.data[slice(*range)]["price"])
-            position = self.data[slice(*range)]["side"]
+            to_return = []
+            for _ in range(batch_size):
+                prices = np.log(self.data[price_range[0]:price_range[1]]["price"])
+                position = self.data[slice(*price_range)]["side"]
+
+                to_return.append(prices)
 
             ### FINISH
-            return (broadcasted version of this)
+            return np.asarray(to_return)
         else:
             return self.price_change, self.holdings, self.cash, self.data[self.state]["side"]
 
