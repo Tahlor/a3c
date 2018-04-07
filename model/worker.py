@@ -98,7 +98,7 @@ class Worker(Thread):
         self.exchange.goto_state(starting_state)
         chosen_actions = []
         rewards = []
-        states = []
+
         # Prime e.g. LSTM
         if not self.deep_model:
             historical_prices = self.exchange.get_price_history(current_id=starting_state, n=self.model.input_size,
@@ -117,11 +117,11 @@ class Worker(Thread):
         # We could do the full GRU training in one shot if the input doesn't depend on our actions
         # When we calculate gradients, we can similarly do it in one batch
 
-        actions = self.model.get_action(sess, input_tensor)  # returns GAME LENGTH X 1 X 2 [-1 to 1, sd]
+        actions, states, values = self.model.get_actions_states_values(sess, input_tensor)  # returns GAME LENGTH X 1 X 2 [-1 to 1, sd]
 
         for i in range(0, GAME_LENGTH):
             # get action prediction
-            action = actions[i][0]
+            action = actions[:,i] # batch_size, seq,
             chosen_action = self.exchange.interpret_action(action[0], action[1])
             current_value = self.exchange.get_value()
             R = current_value - previous_value
@@ -131,6 +131,7 @@ class Worker(Thread):
             rewards.append(R)
             previous_value = self.exchange.get_value()
             states.append(self.model.get_state()) # returns hidden/cell states, need to combine with input state
+
         return chosen_actions, rewards, states, input_tensor
 
     def run(self, sess, coord, t_max):
@@ -168,6 +169,7 @@ class Worker(Thread):
         for n, r in enumerate(rewards[::-1]):
             R = r + self.model.discount*R
             discounted_rewards.append(R)
+            advantage =
 
         discounted_rewards = np.asarray(discounted_rewards)[::-1] # T
         chosen_action = np.asarray(chosen_action) # T

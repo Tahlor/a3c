@@ -125,28 +125,36 @@ class Model:
     ## Figure out how to work in "chosen action"
     ## Calculate advantages
 
-    def update_policy(self, chosen_actions, inputs):
-        # Action -- needs to output
-        #log(1 + exp(x))
+    def update_policy(self, chosen_actions, rewards, states, inputs):
+        # input placeholder = input
+        # GRU states placeholder = states
 
-        # Actions [n steps, # of actions, 2 (action, sd)]
+        # Actions [batch size, t steps, # of actions, 2 (action, sd)]
+        # chosen actions = [ batch size=1 * t ]
+        # chosen rewards = [ batch size=1 * t ]
+        # value_op = [batch_size, t]
+        # actions_mus    = [batch, t, # of actions]
 
         # Vector of continuous probabilites for each action
         # Vector of covariances for each action
-        actions = None
-        sds = self.actions_op[:,:,1] # Actions op returns N X 1 action X 2
-        action_vectors = actions[:,:,0] # n steps, by 1 action
+
+        action_dist = tf.contrib.distributions.Normal(self.action_mus, self.action_sds) # [batch, t, # of actions]
+
+        # Get log prob given chosen actions
+        log_prob = action_dist.log_prob(chosen_actions) # probability < 1 , so negative value here
 
         # Calculate entropy
-        entropy = -1/2 * (tf.log(2*action_vectors * math.pi * sds ** 2) + 1) # N steps X # of actions
+        # entropy = -1/2 * (tf.log(2*self.action_mus * math.pi * self.action_sds ** 2) + 1) # N steps X # of actions
+        entropy = log_prob.entropy() # [batch, t, # of actions], negative
 
-        # Advantages just an N list
-        # Action Vectors N X # of actions
-        # Entropy N X # of actions
-        self.policy_losses = - (tf.log(action_vectors) * advantages + self.entropy_weight * entropy)
-        self.policy_loss = tf.reduce_sum(self.policy_losses, name="policy_loss")
+        # Advantage function
+        advantage = tf.subtract(self.rewards, self.value_op, name='advantage')  #[ batch size=1 * t ]
 
-        #self.optimizer = tf.train.AdamOptimizer(1e-4)
+        # Loss -- entropy is higher with high uncertainty -- ensures exploration at first,
+        #  e.g. even if an OK path is found at first, high entropy => higher loss, so it will take
+        #   that good path with a grain of salt
+        self.policy_loss =  -tf.reduce_mean(log_prob * advantage + entropy * self.entropy_weight)
+
         self.optimizer = tf.train.RMSPropOptimizer(0.00025, 0.99, 0.0, 1e-6)
         self.policy_grads_and_vars = self.optimizer.compute_gradients(self.policy_loss)
         self.policy_grads_and_vars = [[grad, var] for grad, var in self.policy_grads_and_vars if grad is not None]
