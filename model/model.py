@@ -110,8 +110,8 @@ class Model:
             # i.e. one value per step in the sequence, for all sequences
             self.value_op = fc_list(output_list, 1, name='value', activation=None)
 
-            self.loss_op = tf.reduce_sum(self.targets_ph - self.actions_op, axis=1)
-            self.optimizer = tf.train.RMSPropOptimizer(0.01).minimize(self.loss_op)
+            # self.loss_op = tf.reduce_sum(self.targets_ph - self.actions_op, axis=1)
+            # self.optimizer = tf.train.RMSPropOptimizer(0.01).minimize(self.loss_op)
 
             #with tf.Session(graph=self.graph) as sess:
             #    sess.run(tf.global_variables_initializer())
