@@ -8,22 +8,24 @@ sys.path.append("..")
 # import model.value
 # import model.policy
 
+
 def fc(inputs, num_nodes, name='0', activation=tf.nn.relu):
-    weights = tf.get_variable('W_' + name,
-                              shape=(inputs.shape[1], num_nodes),
-                              dtype=tf.float32,
-                              initializer=tfcl.variance_scaling_initializer())
+    with tf.variable_scope('fully_connected', reuse=tf.AUTO_REUSE) as scope:
+        weights = tf.get_variable('W_' + name,
+                                  shape=(inputs.shape[1], num_nodes),
+                                  dtype=tf.float32,
+                                  initializer=tfcl.variance_scaling_initializer())
 
-    bias = tf.get_variable('b_' + name,
-                           shape=[num_nodes],
-                           dtype=tf.float32,
-                           initializer=tfcl.variance_scaling_initializer())
+        bias = tf.get_variable('b_' + name,
+                               shape=[num_nodes],
+                               dtype=tf.float32,
+                               initializer=tfcl.variance_scaling_initializer())
 
-    net_value = tf.matmul(inputs, weights) + bias
-    if activation is None:
-        return net_value
-    else:
-        return activation(net_value)
+        net_value = tf.matmul(inputs, weights) + bias
+        if activation is None:
+            return net_value
+        else:
+            return activation(net_value)
 
 def fc_list(inputs, num_nodes, name='0', activation=tf.nn.relu):
     outputs = []
@@ -69,7 +71,7 @@ class Model:
     def build_network(self):
         with self.graph.as_default():
             self.inputs_ph = tf.placeholder(tf.float32, shape=[self.batch_size, self.input_size], name='inputs')
-            self.targets_ph = tf.placeholder(tf.float32, shape=[self.batch_size], name='targets')
+            self.targets_ph = tf.placeholder(tf.float32, shape=[self.batch_size, self.input_size], name='targets')
 
             if self.naive:
                 outputs = fc(self.inputs_ph, self.layer_size)
@@ -86,7 +88,7 @@ class Model:
                     output_list, final_state = seq2seq.rnn_decoder(inputs, initial_state, multi_cell)
 
                 self.actions_op = fc_list(output_list, 1, name='action', activation=tf.nn.tanh)
-                self.value_op = fc(output_list, 1, name='value', activation=None)
+                self.value_op = fc_list(output_list, 1, name='value', activation=None)
 
             # Approach for a discrete action space, where we can either
             # buy or sell but don't specify an amount
