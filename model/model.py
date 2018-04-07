@@ -73,6 +73,9 @@ class Model:
         with self.graph.as_default():
             self.inputs_ph = tf.placeholder(tf.float32, shape=[self.batch_size, self.input_size], name='inputs')
             self.targets_ph = tf.placeholder(tf.float32, shape=[self.batch_size, self.input_size], name='targets')
+            self.gru_state = tf.placeholder(tf.float32, shape=[self.batch_size, self.layer_size], name='gru_state')
+            self.policy_advantage = tf.placeholder(tf.float32, shape=[self.batch_size, self.layer_size], name='gru_state')
+            self.chosen_actions = tf.placeholder(tf.float32, shape=[self.batch_size, self.seq], name='gru_state')
 
             inputs = tf.split(self.inputs_ph, self.input_size, axis=1)
 
@@ -125,7 +128,7 @@ class Model:
     ## Figure out how to work in "chosen action"
     ## Calculate advantages
 
-    def update_policy(self, chosen_actions, rewards, states, inputs):
+    def update_policy(self):
         # input placeholder = input
         # GRU states placeholder = states
 
@@ -159,6 +162,7 @@ class Model:
         self.policy_grads_and_vars = self.optimizer.compute_gradients(self.policy_loss)
         self.policy_grads_and_vars = [[grad, var] for grad, var in self.policy_grads_and_vars if grad is not None]
         self.policy_train_op = self.optimizer.apply_gradients(self.policy_grads_and_vars, global_step=tf.contrib.framework.get_global_step())
+        return self.policy_train_op
 
     def update_value(self, advantages):
         self.value_losses = (advantages)**2
@@ -181,7 +185,6 @@ class Model:
         return self.last_input_state, self.gru_state
 
     def get_value(self, sess, input, gru_state = None):
-            #session.run(self.global_model.actions_op, feed_dict={self.global_model.inputs_ph: hp_reshaped})
         with tf.Session() as sess:
             value = sess.run(self.value_op, feed_dict={self.input_ph: input, self.gru_state_input: gru_state})
         return value, gru_state

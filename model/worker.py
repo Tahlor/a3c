@@ -117,11 +117,13 @@ class Worker(Thread):
         # We could do the full GRU training in one shot if the input doesn't depend on our actions
         # When we calculate gradients, we can similarly do it in one batch
         self.input_tensor = input_tensor
-        self.actions, self.states, self.values = self.model.get_actions_states_values(sess, input_tensor)  # returns GAME LENGTH X 1 X 2 [-1 to 1, sd]
+        self.actions, self.final_state, self.values = self.model.get_actions_states_values(sess, input_tensor)  # returns GAME LENGTH X 1 X 2 [-1 to 1, sd]
+
+        # final_state = [batch size, 256]
 
         for i in range(0, GAME_LENGTH):
             # get action prediction
-            action = actions[:,i] # batch_size, seq,
+            action = self.actions[:,i] # batch_size, seq,
             chosen_action = self.exchange.interpret_action(action[0], action[1])
             current_value = self.exchange.get_value()
             R = current_value - previous_value
@@ -130,7 +132,6 @@ class Worker(Thread):
             chosen_action.append(chosen_action)
             rewards.append(R)
             previous_value = self.exchange.get_value()
-            states.append(self.model.get_state()) # returns hidden/cell states, need to combine with input state
 
         self.chosen_actions = np.asarray(chosen_actions)
         self.rewards = np.asarray(rewards)
@@ -180,8 +181,15 @@ class Worker(Thread):
             discounted_rewards.append(R)
             policy_advantage.append(R - self.values[:,n])
 
-        discounted_rewards = np.asarray(discounted_rewards)[:, ::-1] # batch, t , make it go forward again
+        self.discounted_rewards = np.asarray(discounted_rewards)[:, ::-1] # batch, t , make it go forward again
+        self.policy_advantage = np.asarray(policy_advantage)
+        self.update_policy(sess)
+        self.update_values(sess)
 
-        self.model.update_policy(sess, )
-        self.model.update_value(sess)
+    def update_policy(self, sess):
+        with tf.Session(graph=self.model.graph) as sess:
+            x = sess.run([self.model.update_policy()], feed_dict={self.model.input_ph: self.input_tensor, self.model.gru_state_input: gru_state,
+                                                                  self.model.policy_advantage: self.policy_advantage})
 
+
+    def update_values(self, sess):
