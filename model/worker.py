@@ -25,6 +25,7 @@ class Worker(Thread):
         self.t_max = t_max
         self.global_model = global_model
         self.deep_model = deep_model
+        self.naive = not deep_model
         self.states_to_prime = states_to_prime
         #self.model = Model(**global_model.get_params()) # build model based on global model params
 
@@ -88,7 +89,6 @@ class Worker(Thread):
             previous_value = self.exchange.get_value()
             states.append(self.model.get_state()) # returns hidden/cell states, need to combine with input state
         return actions, rewards, states
-
 
 
     def play_game2(self, sess, turns=GAME_LENGTH, starting_state=1000):
