@@ -52,9 +52,9 @@ class Worker(Thread):
 
         self.local_model.saver.restore(self.session, model_file)
 
-    def prime_gru(self, input_tensor):
+    def prime_gru(self, sess, input_tensor):
         ### FINISH
-        pass
+        return sess.run(self.model.network_output, feed_dict={self.model.inputs_ph: input_tensor})
 
     def play_game(self, sess, turns=GAME_LENGTH, starting_state=1000):
         if self.exchange is None:
@@ -109,8 +109,8 @@ class Worker(Thread):
 
         else:
             # Prime GRU
-            input_tensor = self.exchange.get_model_input(price_range=[starting_state, starting_state - self.states_to_prime], exogenous=True)
-            self.prime_gru(input_tensor)
+            input_tensor = self.exchange.get_model_input(price_range=[starting_state - self.states_to_prime, starting_state], exogenous=True)
+            self.prime_gru(sess, input_tensor)
             input_tensor = self.exchange.get_model_input(price_range=[starting_state, starting_state + GAME_LENGTH], exogenous=True)  # GAME LENGTH X INPUT SIZE
 
 
@@ -169,7 +169,7 @@ class Worker(Thread):
         for n, r in enumerate(rewards[::-1]):
             R = r + self.model.discount*R
             discounted_rewards.append(R)
-            advantage =
+            # advantage =
 
         discounted_rewards = np.asarray(discounted_rewards)[::-1] # T
         chosen_action = np.asarray(chosen_action) # T
