@@ -36,6 +36,7 @@ class Model:
         self.input_size = input_size
         self.num_layers = num_layers
         self.layer_size = layer_size
+        self.number_of_actions = 1
         self.inputs_ph = None
         self.targets_ph = None # useless for 'real' model, just here for the proof of concept
         self.actions_op = None
@@ -83,8 +84,12 @@ class Model:
             # 0 means 'do nothing', and
             # 1 means 'buy everything you can'.
             # Exchange should know how to interpret this number.
-            self.actions_op = fc(outputs, 1, name='action', activation=tf.nn.tanh)
+            self.actions_op = fc(outputs, self.number_of_actions * 2, name='action', activation=None).reshape(self.number_of_actions, 2)
+            self.action_mu = tf.nn.tanh    ( self.actions_op[:,0] )
+            self.action_sd = tf.nn.softplus( self.actions_op[:,1] )
+
             self.value_op = fc(outputs, 1, name='v')
+
             self.loss_op = tf.reduce_sum(self.targets_ph - self.actions_op, axis=1)
             self.optimizer = tf.train.RMSPropOptimizer(0.01).minimize(self.loss_op)
 
@@ -127,6 +132,30 @@ class Model:
         self.policy_grads_and_vars = [[grad, var] for grad, var in self.policy_grads_and_vars if grad is not None]
         self.policy_train_op = self.optimizer.apply_gradients(self.policy_grads_and_vars, global_step=tf.contrib.framework.get_global_step())
 
+
+
+## TEMP
+    mu, sigma, self.v, self.a_params, self.c_params = self._build_net(
+        scope)  # get mu and sigma of estimated action from neural net
+
+    td = tf.subtract(self.v_target, self.v, name='TD_error')
+    with tf.name_scope('c_loss'):
+        self.c_loss = tf.reduce_mean(tf.square(td))
+
+    with tf.name_scope('wrap_a_out'):
+        mu, sigma = mu * A_BOUND[1], sigma + 1e-4
+
+    normal_dist = tf.contrib.distributions.Normal(mu, sigma)
+
+    with tf.name_scope('a_loss'):
+        log_prob = normal_dist.log_prob(self.a_his)
+        exp_v = log_prob * td
+        entropy = normal_dist.entropy()  # encourage exploration
+        self.exp_v = ENTROPY_BETA * entropy + exp_v
+        self.a_loss = tf.reduce_mean(-self.exp_v)
+
+
+
     def update_value(self, advantages):
         self.value_losses = (advantages)**2
         self.value_loss = tf.reduce_sum(self.value_losses, name="value_loss")
@@ -143,7 +172,7 @@ class Model:
         return self.last_input_state, self.gru_state
 
     def get_value(self, sess, input, gru_state = None):
-        #session.run(self.global_model.actions_op, feed_dict={self.global_model.inputs_ph: hp_reshaped})
+            #session.run(self.global_model.actions_op, feed_dict={self.global_model.inputs_ph: hp_reshaped})
         with tf.Session() as sess:
             value = sess.run(self.value_op, feed_dict={self.input_ph: input, self.gru_state_input: gru_state})
         return value, gru_state
