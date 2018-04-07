@@ -20,7 +20,18 @@ def fc(inputs, num_nodes, name='0', activation=tf.nn.relu):
                            initializer=tfcl.variance_scaling_initializer())
 
     net_value = tf.matmul(inputs, weights) + bias
-    return activation(net_value)
+    if activation is None:
+        return net_value
+    else:
+        return activation(net_value)
+
+def fc_list(inputs, num_nodes, name='0', activation=tf.nn.relu):
+    outputs = []
+    for item in inputs:
+        outputs.append(fc(item, num_nodes, name=name, activation=activation))
+
+    return tf.concat(outputs, axis=1)
+
 
 def get_gru(num_layers, state_dim, reuse=False):
     with tf.variable_scope('gru', reuse=reuse):
@@ -32,7 +43,8 @@ def get_gru(num_layers, state_dim, reuse=False):
 
 
 class Model:
-    def __init__(self, input_size=10, num_layers=1, layer_size=256, trainable = True, discount = .9, naive=False):
+    def __init__(self, batch_size=100, input_size=10, num_layers=1, layer_size=256, trainable = True, discount = .9, naive=False):
+        self.batch_size = batch_size
         self.input_size = input_size
         self.num_layers = num_layers
         self.layer_size = layer_size
@@ -57,21 +69,23 @@ class Model:
 
     def build_network(self):
         with self.graph.as_default():
-            self.inputs_ph = tf.placeholder(tf.float32, shape=[1, self.input_size], name='inputs')
-            self.targets_ph = tf.placeholder(tf.float32, shape=[1], name='targets')
-
-            inputs = tf.split(self.inputs_ph, self.input_size, axis=1)
+            self.inputs_ph = tf.placeholder(tf.float32, shape=[self.batch_size, self.input_size], name='inputs')
+            self.targets_ph = tf.placeholder(tf.float32, shape=[self.batch_size], name='targets')
 
             if self.naive:
                 outputs = fc(self.inputs_ph, self.layer_size)
+                self.actions_op = fc(outputs, 1, name='action', activation=tf.nn.tanh)
+                self.value_op = fc(outputs, 1, name='value', activation=None)
+
             else:
+                inputs = tf.split(self.inputs_ph, self.input_size, axis=1)
                 gru_cells = get_gru(self.num_layers, self.layer_size)
                 multi_cell = tf.nn.rnn_cell.MultiRNNCell(gru_cells)
-                initial_state = multi_cell.zero_state(batch_size=1, dtype=tf.float32)
+                initial_state = multi_cell.zero_state(batch_size=self.batch_size, dtype=tf.float32)
 
                 with tf.variable_scope('rnn_decoder') as scope:
                     output_list, final_state = seq2seq.rnn_decoder(inputs, initial_state, multi_cell)
-                    outputs = tf.concat(output_list, axis=0)
+
 
             # Approach for a discrete action space, where we can either
             # buy or sell but don't specify an amount
@@ -84,11 +98,14 @@ class Model:
             # 0 means 'do nothing', and
             # 1 means 'buy everything you can'.
             # Exchange should know how to interpret this number.
-            self.actions_op = fc(outputs, self.number_of_actions * 2, name='action', activation=None).reshape(self.number_of_actions, 2)
+
+            # Actions distribution
+            self.actions_op = fc_list(output_list, self.number_of_actions * 2, name='action', activation=None).reshape(self.number_of_actions, 2)
             self.action_mu = tf.nn.tanh    ( self.actions_op[:,0] )
             self.action_sd = tf.nn.softplus( self.actions_op[:,1] )
 
-            self.value_op = fc(outputs, 1, name='v')
+            # Value
+            self.value_op = fc_list(output_list, 1, name='v')
 
             self.loss_op = tf.reduce_sum(self.targets_ph - self.actions_op, axis=1)
             self.optimizer = tf.train.RMSPropOptimizer(0.01).minimize(self.loss_op)
