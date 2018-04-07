@@ -100,9 +100,9 @@ class Model:
             # Exchange should know how to interpret this number.
 
             # Actions distribution
-            self.actions_op = fc_list(output_list, self.number_of_actions * 2, name='action', activation=None).reshape(self.number_of_actions, 2)
-            self.action_mu = tf.nn.tanh    ( self.actions_op[:,0] )
-            self.action_sd = tf.nn.softplus( self.actions_op[:,1] )
+            self.actions_op = fc_list(output_list, self.number_of_actions * 2, name='action', activation=None).reshape(self.number_of_actions, 2) # return N X 1 X 2
+            self.action_mus = tf.nn.tanh    ( self.actions_op[:,:,0] )
+            self.action_sds = tf.nn.softplus( self.actions_op[:,:,1] )
 
             # Value
             self.value_op = fc_list(output_list, 1, name='v')
@@ -122,20 +122,26 @@ class Model:
     ## Figure out how to work in "chosen action"
     ## Calculate advantages
 
-    def update_policy(self, chosen_actions, inputs):
-        # Action -- needs to output
-        #log(1 + exp(x))
+    def update_policy(self, chosen_actions, rewards, states, inputs):
+        # input placeholder = input
+        # GRU states placeholder = states
 
-        # Actions [n steps, # of actions, 2 (action, sd)]
+        # Actions [batch size, t steps, # of actions, 2 (action, sd)]
+        # chosen actions = [ batch size=1 * t ]
 
         # Vector of continuous probabilites for each action
         # Vector of covariances for each action
-        actions =
-        sds = self.actions_op[:,:,1] # Actions op returns N X 1 action X 2
-        action_vectors = actions[:,:,0] # n steps, by 1 action
+        action_dist = tf.contrib.distributions.Normal(self.action_mus, self.action_sds) # this is t X 1 action
+
+        # Get log prob given chosen actions
+        log_prob = action_dist.log_prob(chosen_actions)
+
+        # Advantage function
+        advantage = tf.subtract(self.rewards, self.value_op, name='advantage')
 
         # Calculate entropy
-        entropy = -1/2 * (tf.log(2*action_vectors * math.pi * sds ** 2) + 1) # N steps X # of actions
+        #entropy = -1/2 * (tf.log(2*self.action_mus * math.pi * self.action_sds ** 2) + 1) # N steps X # of actions
+        entropy = log_prob.entropy()
 
         # Advantages just an N list
         # Action Vectors N X # of actions
