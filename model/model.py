@@ -45,9 +45,10 @@ def get_gru(num_layers, state_dim, reuse=False):
 
 
 class Model:
-    def __init__(self, batch_size=1, input_size=1000, num_layers=1, layer_size=256, trainable = True, discount = .9, naive=False):
+    def __init__(self, batch_size=1, input_size=2, num_layers=1, layer_size=256, trainable = True, discount = .9, naive=False, seq_length = 1000):
+        self.seq_length = seq_length
         self.batch_size = batch_size
-        self.input_size = input_size
+        self.input_size = input_size * seq_length
         self.num_layers = num_layers
         self.layer_size = layer_size
         self.number_of_actions = 1
@@ -74,8 +75,9 @@ class Model:
             self.inputs_ph = tf.placeholder(tf.float32, shape=[self.batch_size, self.input_size], name='inputs')
             self.targets_ph = tf.placeholder(tf.float32, shape=[self.batch_size, self.input_size], name='targets')
             self.gru_state = tf.placeholder(tf.float32, shape=[self.batch_size, self.layer_size], name='gru_state')
-            self.policy_advantage = tf.placeholder(tf.float32, shape=[self.batch_size, self.layer_size], name='gru_state')
-            self.chosen_actions = tf.placeholder(tf.float32, shape=[self.batch_size, self.seq], name='gru_state')
+            self.policy_advantage = tf.placeholder(tf.float32, shape=[self.batch_size, self.seq_length], name='advantages')
+            self.chosen_actions = tf.placeholder(tf.float32, shape=[self.batch_size, self.seq_length, self.number_of_actions], name='chosen_actions')
+            self.discounted_rewards = tf.placeholder(tf.float32, shape=[self.batch_size, self.seq_length], name='discounted_rewards')
 
             inputs = tf.split(self.inputs_ph, self.input_size, axis=1)
 
@@ -127,12 +129,6 @@ class Model:
             self.saver = tf.train.Saver()
 
 
-    #### FINISH
-    ## need to take in everything and find the tensorflow mapping for gradient calculation
-    ## Attempt to batch everything
-    ## Figure out how to work in "chosen action"
-    ## Calculate advantages
-
     def update_policy(self):
         # input placeholder = input
         # GRU states placeholder = states
@@ -149,19 +145,19 @@ class Model:
         action_dist = tf.contrib.distributions.Normal(self.action_mus, self.action_sds) # [batch, t, # of actions]
 
         # Get log prob given chosen actions
-        log_prob = action_dist.log_prob(chosen_actions) # probability < 1 , so negative value here
+        log_prob = action_dist.log_prob(self.chosen_actions) # probability < 1 , so negative value here
 
         # Calculate entropy
         # entropy = -1/2 * (tf.log(2*self.action_mus * math.pi * self.action_sds ** 2) + 1) # N steps X # of actions
         entropy = log_prob.entropy() # [batch, t, # of actions], negative
 
-        # Advantage function
-        advantage = tf.subtract(self.rewards, self.value_op, name='advantage')  #[ batch size=1 * t ]
+        # Advantage function - exogenous to the policy network
+        # advantage = tf.subtract(self.rewards, self.value_op, name='advantage')  #[ batch size=1 * t ]
 
         # Loss -- entropy is higher with high uncertainty -- ensures exploration at first,
         #  e.g. even if an OK path is found at first, high entropy => higher loss, so it will take
         #   that good path with a grain of salt
-        self.policy_loss =  -tf.reduce_mean(log_prob * advantage + entropy * self.entropy_weight)
+        self.policy_loss =  -tf.reduce_mean(log_prob * self.policy_advantages + entropy * self.entropy_weight)
 
         self.optimizer = tf.train.RMSPropOptimizer(0.00025, 0.99, 0.0, 1e-6)
         self.policy_grads_and_vars = self.optimizer.compute_gradients(self.policy_loss)
@@ -169,8 +165,10 @@ class Model:
         self.policy_train_op = self.optimizer.apply_gradients(self.policy_grads_and_vars, global_step=tf.contrib.framework.get_global_step())
         return self.policy_train_op
 
-    def update_value(self, advantages):
-        self.value_losses = (advantages)**2
+    def update_value(self):
+
+        #self.value_losses = (self.value_op - self.discounted_rewards)**2
+        self.value_losses = tf.squared_difference(self.value_op, self.discounted_rewards)
         self.value_loss = tf.reduce_sum(self.value_losses, name="value_loss")
 
         #self.optimizer = tf.train.AdamOptimizer(1e-4)
@@ -178,6 +176,8 @@ class Model:
         self.value_grads_and_vars = self.optimizer.compute_gradients(self.value_loss)
         self.value_grads_and_vars = [[grad, var] for grad, var in self.value_grads_and_vars if grad is not None]
         self.value_train_op = self.optimizer.apply_gradients(self.value_grads_and_vars, global_step=tf.contrib.framework.get_global_step())
+        return self.value_train_op
+
 
     # tf.contrib.distributions.Normal(1.,1.).log_prob()
 

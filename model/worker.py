@@ -110,7 +110,7 @@ class Worker(Thread):
         else:
             # Prime GRU
             input_tensor = self.exchange.get_model_input(price_range=[starting_state - self.states_to_prime, starting_state], exogenous=True)
-            priming_output = self.prime_gru(sess, input_tensor)
+            self.initial_gru_state = self.prime_gru(sess, input_tensor)
             input_tensor = self.exchange.get_model_input(price_range=[starting_state, starting_state + GAME_LENGTH], exogenous=True)  # GAME LENGTH X INPUT SIZE
 
 
@@ -189,8 +189,10 @@ class Worker(Thread):
 
     def update_policy(self, sess):
         with tf.Session(graph=self.model.graph) as sess:
-            x = sess.run([self.model.update_policy()], feed_dict={self.model.input_ph: self.input_tensor, self.model.gru_state_input: gru_state,
-                                                                  self.model.policy_advantage: self.policy_advantage})
-
+            x = sess.run([self.model.update_policy()], feed_dict={self.model.input_ph: self.input_tensor, self.model.gru_state_input: self.initial_gru_state,
+                                                                  self.model.policy_advantage: self.policy_advantage, self.model.chosen_actions: self.chosen_actions})
 
     def update_values(self, sess):
+        with tf.Session(graph=self.model.graph) as sess:
+            x = sess.run([self.model.update_values()], feed_dict={self.model.input_ph: self.input_tensor, self.model.gru_state_input: self.initial_gru_state,
+                                                                  self.model.discounted_rewards: self.discounted_rewards})
