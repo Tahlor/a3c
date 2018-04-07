@@ -45,7 +45,7 @@ def get_gru(num_layers, state_dim, reuse=False):
 
 
 class Model:
-    def __init__(self, batch_size=1, input_size=10, num_layers=1, layer_size=256, trainable = True, discount = .9, naive=False):
+    def __init__(self, batch_size=1, input_size=1000, num_layers=1, layer_size=256, trainable = True, discount = .9, naive=False):
         self.batch_size = batch_size
         self.input_size = input_size
         self.num_layers = num_layers
@@ -88,7 +88,12 @@ class Model:
                 initial_state = multi_cell.zero_state(batch_size=self.batch_size, dtype=tf.float32)
 
                 with tf.variable_scope('rnn_decoder') as scope:
-                    output_list, final_state = seq2seq.rnn_decoder(inputs, initial_state, multi_cell)
+                    # network_output is a tuple of (output_list, final_state)
+                    # note that (output_list) is really just the GRU state at each time step
+                    # (e.g. the final element in output_list is equal to final_state)
+                    self.network_output = seq2seq.rnn_decoder(inputs, initial_state, multi_cell)
+                    output_list = self.network_output[0]
+                    final_state = self.network_output[1]
 
             # Approach for a discrete action space, where we can either
             # buy or sell but don't specify an amount
@@ -177,8 +182,7 @@ class Model:
     # tf.contrib.distributions.Normal(1.,1.).log_prob()
 
     def get_actions_states_values(self, sess, input_tensor, gru_state = None) :
-        with tf.Session() as sess:
-            actions,states,values = sess.run([self.actions_op, self.states, self.value_op], feed_dict={self.input_ph: input_tensor, self.gru_state_input: gru_state})
+        actions,states,values = sess.run([self.actions_op, self.value_op], feed_dict={self.input_ph: input_tensor, self.gru_state_input: gru_state})
         return actions, states, values
 
     def get_state(self):

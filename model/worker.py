@@ -52,9 +52,9 @@ class Worker(Thread):
 
         self.local_model.saver.restore(self.session, model_file)
 
-    def prime_gru(self, input_tensor):
+    def prime_gru(self, sess, input_tensor):
         ### FINISH
-        pass
+        return sess.run(self.model.network_output, feed_dict={self.model.inputs_ph: input_tensor})
 
     def play_game(self, sess, turns=GAME_LENGTH, starting_state=1000):
         if self.exchange is None:
@@ -109,13 +109,14 @@ class Worker(Thread):
 
         else:
             # Prime GRU
-            input_tensor = self.exchange.get_model_input(price_range=[starting_state, starting_state - self.states_to_prime], exogenous=True)
-            self.prime_gru(input_tensor)
+            input_tensor = self.exchange.get_model_input(price_range=[starting_state - self.states_to_prime, starting_state], exogenous=True)
+            priming_output = self.prime_gru(sess, input_tensor)
             input_tensor = self.exchange.get_model_input(price_range=[starting_state, starting_state + GAME_LENGTH], exogenous=True)  # GAME LENGTH X INPUT SIZE
 
 
         # We could do the full GRU training in one shot if the input doesn't depend on our actions
         # When we calculate gradients, we can similarly do it in one batch
+        # TODO: make it so we can pass initial state to the model (make initial_state in the model a placeholder?)
         self.input_tensor = input_tensor
         self.actions, self.final_state, self.values = self.model.get_actions_states_values(sess, input_tensor)  # returns GAME LENGTH X 1 X 2 [-1 to 1, sd]
 

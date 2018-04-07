@@ -71,7 +71,7 @@ for worker_id in range(NUM_WORKERS):
         worker_summary_writer = summary_writer
 
     # Initialize new workers
-    worker = Worker(exchange, m, T, 10)
+    worker = Worker(m, T, 10)
     workers.append(worker)
 
 # Have each worker somewhat randomly hop around to different dates
