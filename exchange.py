@@ -61,7 +61,7 @@ class Exchange:
         if exogenous:
             to_return = []
             for _ in range(batch_size):
-                prices = np.log(self.data[price_range[0]:price_range[1]]["price"])
+                prices = np.log(self.data[slice(*price_range)]["price"])
                 position = self.data[slice(*price_range)]["side"]
 
                 to_return.append(prices)

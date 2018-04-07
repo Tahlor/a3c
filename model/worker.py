@@ -110,18 +110,19 @@ class Worker(Thread):
         else:
             # Prime GRU
             input_tensor = self.exchange.get_model_input(price_range=[starting_state - self.states_to_prime, starting_state], exogenous=True)
-            self.prime_gru(sess, input_tensor)
+            priming_output = self.prime_gru(sess, input_tensor)
             input_tensor = self.exchange.get_model_input(price_range=[starting_state, starting_state + GAME_LENGTH], exogenous=True)  # GAME LENGTH X INPUT SIZE
 
 
         # We could do the full GRU training in one shot if the input doesn't depend on our actions
         # When we calculate gradients, we can similarly do it in one batch
+        # TODO: make it so we can pass initial state to the model (make initial_state in the model a placeholder?)
         self.input_tensor = input_tensor
         self.actions, self.states, self.values = self.model.get_actions_states_values(sess, input_tensor)  # returns GAME LENGTH X 1 X 2 [-1 to 1, sd]
 
         for i in range(0, GAME_LENGTH):
             # get action prediction
-            action = actions[:,i] # batch_size, seq,
+            action = self.actions[:,i] # batch_size, seq,
             chosen_action = self.exchange.interpret_action(action[0], action[1])
             current_value = self.exchange.get_value()
             R = current_value - previous_value

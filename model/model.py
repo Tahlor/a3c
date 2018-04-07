@@ -45,7 +45,7 @@ def get_gru(num_layers, state_dim, reuse=False):
 
 
 class Model:
-    def __init__(self, batch_size=1, input_size=10, num_layers=1, layer_size=256, trainable = True, discount = .9, naive=False):
+    def __init__(self, batch_size=1, input_size=1000, num_layers=1, layer_size=256, trainable = True, discount = .9, naive=False):
         self.batch_size = batch_size
         self.input_size = input_size
         self.num_layers = num_layers
@@ -178,8 +178,7 @@ class Model:
     # tf.contrib.distributions.Normal(1.,1.).log_prob()
 
     def get_actions_states_values(self, sess, input_tensor, gru_state = None) :
-        with tf.Session() as sess:
-            actions,states,values = sess.run([self.actions_op, self.states, self.value_op], feed_dict={self.input_ph: input_tensor, self.gru_state_input: gru_state})
+        actions,states,values = sess.run([self.actions_op, self.value_op], feed_dict={self.input_ph: input_tensor, self.gru_state_input: gru_state})
         return actions, states, values
 
     def get_state(self):
