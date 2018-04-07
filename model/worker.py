@@ -109,9 +109,9 @@ class Worker(Thread):
 
         else:
             # Prime GRU
-            input_tensor = self.exchange.get_model_input([starting_state - self.states_to_prime], True)
+            input_tensor = self.exchange.get_model_input(price_range=[starting_state - self.states_to_prime], exogenous=True)
             self.prime_gru(input_tensor)
-            input_tensor = self.exchange.get_model_input([starting_state,starting_state+GAME_LENGTH], True) # GAME LENGTH X INPUT SIZE
+            input_tensor = self.exchange.get_model_input(price_range=[starting_state, starting_state+GAME_LENGTH], exogenous=True)  # GAME LENGTH X INPUT SIZE
 
 
         # We could do the full GRU training in one shot if the input doesn't depend on our actions
