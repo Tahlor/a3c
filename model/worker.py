@@ -18,7 +18,7 @@ DATA = r"./data/BTC_USD_100_FREQ.npy"
 # Make some toy data
 
 class Worker(Thread):
-    def __init__(self, exchange, global_model, T, T_max, t_max=10, deep_model = True, states_to_prime = 1000):
+    def __init__(self, global_model, T, T_max, t_max=10, deep_model = True, states_to_prime = 1000):
         self.t = tf.Variable(initial_value=1, trainable=False)
         self.T = T
         self.T_max = T_max
