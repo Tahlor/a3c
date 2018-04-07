@@ -84,7 +84,6 @@ class Worker(Thread):
         self.exchange.goto_state(starting_state)
         actions = []
         rewards = []
-        values = []
         states = []
         # Prime e.g. LSTM
         historical_prices = self.exchange.get_price_history(current_id=starting_state, n=self.model.input_size,
@@ -93,22 +92,59 @@ class Worker(Thread):
 
         # prime_lstm()
 
+        # We could do the full GRU training in one shot if the input doesn't depend on our actions
+        # When we calculate gradients, we can similarly do it in one batch
+
         for i in range(0, GAME_LENGTH):
             # get action prediction
             # action = np.random.randn() - .5
-            value, action = self.model.get_both(sess, hp_reshaped)
+            action = self.model.get_action(sess, hp_reshaped) # possibly get all actions in advance
 
             self.exchange.interpret_action(action)
             current_value = self.exchange.get_value()
             R = current_value - starting_value
 
             # Record actions
-            values.append(value)
             actions.append(action)
             rewards.append(R)
             starting_value = self.exchange.get_value()
             states.append(self.model.get_state()) # returns hidden/cell states, need to combine with input state
-        return actions, rewards, values
+        return actions, rewards, states
+
+    def play_game2(self, sess, turns=GAME_LENGTH, starting_state=1000):
+        if self.exchange is None:
+            self.exchange = Exchange(DATA, cash=10000, holdings=0, actions=[-1, 1])
+        starting_value = self.exchange.cash
+        self.exchange.goto_state(starting_state)
+        actions = []
+        rewards = []
+        states = []
+        # Prime e.g. LSTM
+        historical_prices = self.exchange.get_price_history(current_id=starting_state, n=self.model.input_size,
+                                                       freq=100)  # get 100 previous prices, every 100 steps
+        hp_reshaped = historical_prices.reshape([1,10])
+
+        # prime_lstm()
+
+        # We could do the full GRU training in one shot if the input doesn't depend on our actions
+        # When we calculate gradients, we can similarly do it in one batch
+
+        actions = self.model.get_action(sess, hp_reshaped)  # possibly get all actions in advance
+
+        for i in range(0, GAME_LENGTH):
+            # get action prediction
+            # action = np.random.randn() - .5
+
+            self.exchange.interpret_action(action)
+            current_value = self.exchange.get_value()
+            R = current_value - starting_value
+
+            # Record actions
+            actions.append(action)
+            rewards.append(R)
+            starting_value = self.exchange.get_value()
+            states.append(self.model.get_state()) # returns hidden/cell states, need to combine with input state
+        return actions, rewards, states
 
     def run(self, sess, coord, t_max):
         with sess.as_default(), sess.graph.as_default():
@@ -123,7 +159,7 @@ class Worker(Thread):
 
                     # Collect some experience
                     #transitions, local_t, global_t = self.play_game(t_max, sess)
-                    actions, rewards, values = self.play_game(sess, turns=t_max)
+                    actions, rewards, states = self.play_game(sess, turns=t_max)
 
                     if self.T_max is not None and next(self.T) >= self.T_max:
                         tf.logging.info("Reached global step {}. Stopping.".format(self.T))
@@ -131,14 +167,14 @@ class Worker(Thread):
                         return
 
                     # Update the global networks
-                    self.update(sess, actions, rewards, values)
+                    self.update(sess, actions, rewards, states)
 
             except tf.errors.CancelledError:
                 return
 
     def update(self, sess, actions, rewards, values):
         # Calculate reward
-        r = self.model.sample_value()
+        r = self.model.get_value(sess, input, state)
 
         # Accumlate gradients at each time step
         for n, r in enumerate(rewards[::-1]):

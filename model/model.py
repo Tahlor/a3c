@@ -94,7 +94,7 @@ class Model:
 
             self.saver = tf.train.Saver()
 
-    def update_policy(self, actions, advantages):
+    def update_policy(self, chosen_actions, inputs):
         # Action -- needs to output
         #log(1 + exp(x))
 
@@ -102,8 +102,8 @@ class Model:
 
         # Vector of continuous probabilites for each action
         # Vector of covariances for each action
-
-        sds = actions[:,:,1]
+        actions =
+        sds = self.actions_op[:,:,1] # Actions op returns N X 1 action X 2
         action_vectors = actions[:,:,0] # n steps, by 1 action
 
         # Calculate entropy
@@ -131,17 +131,18 @@ class Model:
         self.value_grads_and_vars = [[grad, var] for grad, var in self.value_grads_and_vars if grad is not None]
         self.value_train_op = self.optimizer.apply_gradients(self.value_grads_and_vars, global_step=tf.contrib.framework.get_global_step())
 
+    tf.contrib.distributions.Normal(1,1).log_prob()
 
     def get_state(self):
-        return self.gru_state
+        return self.last_input_state, self.gru_state
 
-    def get_value(self, sess, input, gru_state):
+    def get_value(self, sess, input, gru_state = None):
         #session.run(self.global_model.actions_op, feed_dict={self.global_model.inputs_ph: hp_reshaped})
         with tf.Session() as sess:
             value = sess.run(self.value_op, feed_dict={self.input_ph: input, self.gru_state_input: gru_state})
         return value, gru_state
 
-    def get_policy(self, sess, input, gru_state):
+    def get_policy(self, sess, input, gru_state = None):
         with tf.Session() as sess:
             policy = sess.run(self.policy_op, feed_dict={self.input_ph: input, self.gru_state_input: gru_state})
         return policy, gru_state
