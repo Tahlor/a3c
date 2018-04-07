@@ -124,7 +124,7 @@ class Model:
 
         # Vector of continuous probabilites for each action
         # Vector of covariances for each action
-        actions =
+        actions = None
         sds = self.actions_op[:,:,1] # Actions op returns N X 1 action X 2
         action_vectors = actions[:,:,0] # n steps, by 1 action
 
@@ -153,7 +153,7 @@ class Model:
         self.value_grads_and_vars = [[grad, var] for grad, var in self.value_grads_and_vars if grad is not None]
         self.value_train_op = self.optimizer.apply_gradients(self.value_grads_and_vars, global_step=tf.contrib.framework.get_global_step())
 
-    tf.contrib.distributions.Normal(1,1).log_prob()
+    # tf.contrib.distributions.Normal(1.,1.).log_prob()
 
     def get_state(self):
         return self.last_input_state, self.gru_state
