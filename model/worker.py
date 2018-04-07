@@ -116,8 +116,8 @@ class Worker(Thread):
 
         # We could do the full GRU training in one shot if the input doesn't depend on our actions
         # When we calculate gradients, we can similarly do it in one batch
-
-        actions, states, values = self.model.get_actions_states_values(sess, input_tensor)  # returns GAME LENGTH X 1 X 2 [-1 to 1, sd]
+        self.input_tensor = input_tensor
+        self.actions, self.states, self.values = self.model.get_actions_states_values(sess, input_tensor)  # returns GAME LENGTH X 1 X 2 [-1 to 1, sd]
 
         for i in range(0, GAME_LENGTH):
             # get action prediction
@@ -132,7 +132,11 @@ class Worker(Thread):
             previous_value = self.exchange.get_value()
             states.append(self.model.get_state()) # returns hidden/cell states, need to combine with input state
 
-        return chosen_actions, rewards, states, input_tensor
+        self.chosen_actions = np.asarray(chosen_actions)
+        self.rewards = np.asarray(rewards)
+
+        # self.input_tensor, self.actions, self.states, self.values, self.chosen_actions, self.rewards
+
 
     def run(self, sess, coord, t_max):
         with sess.as_default(), sess.graph.as_default():
@@ -147,7 +151,7 @@ class Worker(Thread):
 
                     # Collect some experience
                     #transitions, local_t, global_t = self.play_game(t_max, sess)
-                    chosen_actions, rewards, states, input_tensor = self.play_game2(sess, turns=t_max)
+                    self.play_game2(sess, turns=t_max)
 
                     if self.T_max is not None and next(self.T) >= self.T_max:
                         tf.logging.info("Reached global step {}. Stopping.".format(self.T))
@@ -155,27 +159,29 @@ class Worker(Thread):
                         return
 
                     # Update the global networks
-                    self.update(sess, chosen_actions, rewards, states, input_tensor)
+                    self.update(sess)
 
             except tf.errors.CancelledError:
                 return
 
-    def update(self, sess, chosen_action, rewards, states, input_tensor):
+    def update(self, sess):
         # Calculate reward
-        r = self.model.get_value(sess, input, states)
+        # rewards, chosen_actions are: [batch, t]
+        # states is batch x T x GRU SIZE
+        # input_tensor is batch x T X INPUT_SIZE
+
+        r = self.values[:,-1] # get value in last state
 
         # Accumlate gradients at each time step
         discounted_rewards = []
-        for n, r in enumerate(rewards[::-1]):
+        policy_advantage = []
+        for n, r in enumerate(self.rewards[:,::-1]):
             R = r + self.model.discount*R
             discounted_rewards.append(R)
-            advantage =
+            policy_advantage.append(R - self.values[:,n])
 
-        discounted_rewards = np.asarray(discounted_rewards)[::-1] # T
-        chosen_action = np.asarray(chosen_action) # T
-        # states is T x GRU SIZE
-        # input_tensor is T X INPUT_SIZE
+        discounted_rewards = np.asarray(discounted_rewards)[:, ::-1] # batch, t , make it go forward again
 
-        self.model.update_policy(sess, chosen_action, rewards, states, input_tensor)
-        self.model.update_value(sess, chosen_action, rewards, states, input_tensor)
+        self.model.update_policy(sess, )
+        self.model.update_value(sess)
 

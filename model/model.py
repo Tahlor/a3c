@@ -160,30 +160,6 @@ class Model:
         self.policy_grads_and_vars = [[grad, var] for grad, var in self.policy_grads_and_vars if grad is not None]
         self.policy_train_op = self.optimizer.apply_gradients(self.policy_grads_and_vars, global_step=tf.contrib.framework.get_global_step())
 
-
-
-## TEMP
-    # mu, sigma, self.v, self.a_params, self.c_params = self._build_net(
-    #     scope)  # get mu and sigma of estimated action from neural net
-    #
-    # td = tf.subtract(self.v_target, self.v, name='TD_error')
-    # with tf.name_scope('c_loss'):
-    #     self.c_loss = tf.reduce_mean(tf.square(td))
-    #
-    # with tf.name_scope('wrap_a_out'):
-    #     mu, sigma = mu * A_BOUND[1], sigma + 1e-4
-    #
-    # normal_dist = tf.contrib.distributions.Normal(mu, sigma)
-    #
-    # with tf.name_scope('a_loss'):
-    #     log_prob = normal_dist.log_prob(self.a_his)
-    #     exp_v = log_prob * td
-    #     entropy = normal_dist.entropy()  # encourage exploration
-    #     self.exp_v = ENTROPY_BETA * entropy + exp_v
-    #     self.a_loss = tf.reduce_mean(-self.exp_v)
-
-
-
     def update_value(self, advantages):
         self.value_losses = (advantages)**2
         self.value_loss = tf.reduce_sum(self.value_losses, name="value_loss")
@@ -195,6 +171,11 @@ class Model:
         self.value_train_op = self.optimizer.apply_gradients(self.value_grads_and_vars, global_step=tf.contrib.framework.get_global_step())
 
     # tf.contrib.distributions.Normal(1.,1.).log_prob()
+
+    def get_actions_states_values(self, sess, input_tensor, gru_state = None) :
+        with tf.Session() as sess:
+            actions,states,values = sess.run([self.actions_op, self.states, self.value_op], feed_dict={self.input_ph: input_tensor, self.gru_state_input: gru_state})
+        return actions, states, values
 
     def get_state(self):
         return self.last_input_state, self.gru_state
