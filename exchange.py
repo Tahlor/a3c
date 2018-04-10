@@ -4,7 +4,7 @@ import math
 from process_data.utils import *
 
 DATA = ".\data\BTC_USD_100_FREQ.npy"
-DATA = ".\data\BTC-USD_VERY_SHORT.npy"
+#DATA = ".\data\BTC-USD_VERY_SHORT.npy"
 
 # Observe every state, but only act every few states?
 # Delay moves by several states
@@ -122,8 +122,7 @@ class Exchange:
             # Override default freq
             freq = self.number_of_input_prices_for_basic
 
-            list_of_prices = self.generate_log_prices(self, distance = freq) # price change since last input -- this can be anything though
-
+            list_of_prices = self.generate_log_prices(distance = freq) # price change since last input -- freq can be anything though
             # Pattern (every 10th time)
             m = np.array(range(current_id, current_id + self.game_length, freq))
             np.tile(list_of_prices[m], (self.game_length, 1)) + np.tile(list_of_prices[:, None], freq) - 2 * self.game_length
