@@ -40,14 +40,22 @@ class Exchange:
                 2. how often to sample prices (e.g., get price every minute, get price every hour, etc.)
                 3. maybe get order book?
         '''
+        # Game parameters
+        self.number_of_input_prices_for_basic = 10
+        self.number_of_inputs_for_basic = self.number_of_input_prices_for_basic # *2 # for prices and positions
+        self.basic_sample_frequency = 100
+
+        self.game_length = 1000
+
         self.data = np.load(data_stream)
         self.state = 1
+        self.starting_cash = cash
         self.cash = cash
         self.holdings = holdings
         self.actions = actions
         self.transaction_cost = transaction_cost
         self.generate_log_prices()
-
+        self.permit_short = False
         if not time_interval is None:
             print(self.data[0:30])
             self.generate_prices_at_time(time_interval)
@@ -71,12 +79,14 @@ class Exchange:
         else:
             return self.price_change, self.holdings, self.cash, self.data[self.state]["side"]
 
-    def generate_log_prices(self):
+    def generate_log_prices(self, distance = 1):
+        # distance - comparison price; e.g. 5 implies compare this price to the price 5 transactions ago
         # create log prices
         # current price - previous price
         self.price_changes = np.log(self.data[:]["price"]) * 1000.
-        self.price_changes = self.price_changes[1:] - self.price_changes[:-1]
+        self.price_changes = self.price_changes[distance:] - self.price_changes[:-distance]
         self.price_changes = np.insert(self.price_changes, 0, 0) # no change for first state
+        return self.price_changes
 
     def get_next_state(self):
         self.state += 1
@@ -93,12 +103,30 @@ class Exchange:
         return self.state >= len(self.data)
 
     # get history - n = how many rows to get, freq = how often to get them
-    def get_price_history(self, current_id = None, n = 100, freq=100):
+    def get_price_history_no_batch(self, current_id = None, n = 100, freq=100):
         if current_id is None:
             current_id = n*freq
         elif current_id < n * freq:
             print("Initial trade id must be greater than freq * n")
         return np.copy(self.data[current_id:current_id-(n*freq):-freq]["price"])
+
+    def get_price_history(self, current_id=None, n=100, freq=100, batch= True, ):
+        if current_id is None:
+            current_id = self.state
+        if not batch:
+            return self.get_price_history_no_batch(self, current_id=current_id, n=n, freq=freq)
+        else:
+            # For basic model, return a tensor of previous inputs
+            # Array of data
+
+            # Override default freq
+            freq = self.number_of_input_prices_for_basic
+
+            list_of_prices = self.generate_log_prices(self, distance = freq) # price change since last input -- this can be anything though
+
+            # Pattern (every 10th time)
+            m = np.array(range(current_id, current_id + self.game_length, freq))
+            np.tile(list_of_prices[m], (self.game_length, 1)) + np.tile(list_of_prices[:, None], freq) - 2 * self.game_length
 
 
     # same as above, but can optionally define a list [0,10,50,100] of previous time steps, or a function
@@ -158,9 +186,9 @@ class Exchange:
         assert (coin is None) != (currency is None)
 
         if coin is None:
-            proceeds = min(self.holdings, currency/self.current_price)
+            proceeds = min(self.holdings*self.current_price, currency) if not self.permit_short else currency
         else:
-            proceeds = min(self.holdings, coin)
+            proceeds = min(self.holdings*self.current_price, coin*self.current_price) if not self.permit_short else coin*self.current_price
 
         self.cash += proceeds * (1-self.transaction_cost)
         self.holdings -= proceeds/self.current_price
@@ -182,8 +210,17 @@ class Exchange:
             action = 2*(action-np.average(self.actions))/(max(self.actions)-min(self.actions))
             action = self.sample_from_action(action, sd)
 
+        # Margin call
+        if self.permit_short and self.get_value() < .1*self.starting_cash and self.holdings < 0:
+            # close all negative positions if value < 1000
+            self.buy_security(coin=-self.holdings)
+            return action
+
         if action < 0:
-            self.sell_security(coin = self.holdings * abs(action))
+            if not self.permit_short:
+                self.sell_security(coin = self.holdings * abs(action))
+            else: # if agent can short, he can short all but 20% of his initial balance
+                self.sell_security(coin=(self.get_value()   -.2*self.starting_cash)/self.current_price * abs(action))
         elif action > 0:
             self.buy_security(currency = self.cash * abs(action))
         return action
@@ -192,11 +229,8 @@ class Exchange:
         sample = np.random.normal(mean, sd)
         return min(max(sample, -1), 1)
 
-if __name__ == "__main__":
-    myExchange = Exchange(DATA, time_interval=60)
-    print(myExchange.data[0:30])
 
-    #x = myExchange.get_price_history_func(10000)
+def test_buying_and_selling(myExchange):
     #print(x)
     # action can be a vector -1 = 1
     action = 2*(action-np.average(self.actions))/(max(self.actions)-min(self.actions))
@@ -204,3 +238,18 @@ if __name__ == "__main__":
         self.sell_security(coin = self.holdings * abs(action))
     elif action > 0:
         self.buy_security(currency = self.cash * abs(action))
+
+def test_getting_prices(myExchange):
+    #x = myExchange.get_price_history_func(10000)
+
+    x = myExchange.generate_log_prices(10)
+    print(x)
+
+if __name__ == "__main__":
+    # myExchange = Exchange(DATA, time_interval=60)
+    myExchange = Exchange(DATA)
+    myExchange.state = 10000
+    print(myExchange.get_price_history(n = 1, freq=1))
+    test_getting_prices(myExchange)
+
+

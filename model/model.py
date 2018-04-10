@@ -8,7 +8,6 @@ sys.path.append("..")
 # import model.value
 # import model.policy
 
-
 def fc(inputs, num_nodes, name='0', activation=tf.nn.relu):
     with tf.variable_scope('fully_connected', reuse=tf.AUTO_REUSE) as scope:
         weights = tf.get_variable('W_' + name,
@@ -42,7 +41,6 @@ def get_gru(num_layers, state_dim, reuse=False):
             gru_cells.append(GRUCell(state_dim))
 
     return gru_cells
-
 
 class Model:
     def __init__(self, batch_size=1, input_size=2, num_layers=1, layer_size=256, trainable = True, discount = .9, naive=False, seq_length = 1000):
