@@ -62,9 +62,13 @@ class Exchange:
             to_return = []
             for _ in range(batch_size):
                 prices = np.log(self.data[slice(*price_range)]["price"])
-                position = self.data[slice(*price_range)]["side"]
+                positions = self.data[slice(*price_range)]["side"]
 
-                to_return.append(prices)
+                combined = np.empty([prices.size + positions.size], dtype=prices.dtype)
+                combined[0::2] = prices
+                combined[1::2] = positions
+
+                to_return.append(combined)
 
             ### FINISH
             return np.asarray(to_return)

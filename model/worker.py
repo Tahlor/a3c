@@ -53,8 +53,8 @@ class Worker(Thread):
         self.local_model.saver.restore(self.session, model_file)
 
     def prime_gru(self, sess, input_tensor):
-        ### FINISH
-        return sess.run(self.model.network_output, feed_dict={self.model.inputs_ph: input_tensor})
+        initial_state = np.zeros([self.model.batch_size, self.model.layer_size])
+        return sess.run(self.model.network_output, feed_dict={self.model.inputs_ph: input_tensor, self.model.gru_state_ph:initial_state})
 
     def play_game(self, sess, turns=GAME_LENGTH, starting_state=1000):
         if self.exchange is None:
@@ -90,7 +90,6 @@ class Worker(Thread):
             states.append(self.model.get_state()) # returns hidden/cell states, need to combine with input state
         return actions, rewards, states
 
-
     def play_game2(self, sess, turns=GAME_LENGTH, starting_state=1000):
         if self.exchange is None:
             self.exchange = Exchange(DATA, cash=10000, holdings=0, actions=[-1, 1])
@@ -118,7 +117,7 @@ class Worker(Thread):
         # When we calculate gradients, we can similarly do it in one batch
         # TODO: make it so we can pass initial state to the model (make initial_state in the model a placeholder?)
         self.input_tensor = input_tensor
-        self.actions, self.final_state, self.values = self.model.get_actions_states_values(sess, input_tensor)  # returns GAME LENGTH X 1 X 2 [-1 to 1, sd]
+        self.actions, self.state_sequence, self.values = self.model.get_actions_states_values(sess, input_tensor, self.initial_gru_state)  # returns GAME LENGTH X 1 X 2 [-1 to 1, sd]
 
         # final_state = [batch size, 256]
 
@@ -130,7 +129,7 @@ class Worker(Thread):
             R = current_value - previous_value
 
             # Record actions
-            chosen_action.append(chosen_action)
+            chosen_actions.append(chosen_action)
             rewards.append(R)
             previous_value = self.exchange.get_value()
 
@@ -189,10 +188,10 @@ class Worker(Thread):
 
     def update_policy(self, sess):
         with tf.Session(graph=self.model.graph) as sess:
-            x = sess.run([self.model.update_policy()], feed_dict={self.model.input_ph: self.input_tensor, self.model.gru_state_input: self.initial_gru_state,
+            x = sess.run([self.model.update_policy()], feed_dict={self.model.input_ph: self.input_tensor, self.model.gru_state: self.initial_gru_state,
                                                                   self.model.policy_advantage: self.policy_advantage, self.model.chosen_actions: self.chosen_actions})
 
     def update_values(self, sess):
         with tf.Session(graph=self.model.graph) as sess:
-            x = sess.run([self.model.update_values()], feed_dict={self.model.input_ph: self.input_tensor, self.model.gru_state_input: self.initial_gru_state,
+            x = sess.run([self.model.update_values()], feed_dict={self.model.input_ph: self.input_tensor, self.model.gru_state: self.initial_gru_state,
                                                                   self.model.discounted_rewards: self.discounted_rewards})
