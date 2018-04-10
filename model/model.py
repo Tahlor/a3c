@@ -43,10 +43,10 @@ def get_gru(num_layers, state_dim, reuse=False):
     return gru_cells
 
 class Model:
-    def __init__(self, batch_size=1, input_size=2, num_layers=1, layer_size=256, trainable = True, discount = .9, naive=False, seq_length = 1000):
+    def __init__(self, batch_size=1, inputs_per_time_step=2, seq_length=1000, num_layers=1, layer_size=256, trainable = True, discount = .9, naive=False):
         self.seq_length = seq_length
         self.batch_size = batch_size
-        self.input_size = input_size * seq_length
+        self.input_size = inputs_per_time_step * seq_length
         self.num_layers = num_layers
         self.layer_size = layer_size
         self.number_of_actions = 1
@@ -72,26 +72,27 @@ class Model:
         with self.graph.as_default():
             self.inputs_ph = tf.placeholder(tf.float32, shape=[self.batch_size, self.input_size], name='inputs')
             self.targets_ph = tf.placeholder(tf.float32, shape=[self.batch_size, self.input_size], name='targets')
-            self.gru_state = tf.placeholder(tf.float32, shape=[self.batch_size, self.layer_size], name='gru_state')
+            self.gru_state_ph = tf.placeholder(tf.float32, shape=[self.batch_size, self.layer_size], name='gru_state')
             self.policy_advantage = tf.placeholder(tf.float32, shape=[self.batch_size, self.seq_length], name='advantages')
             self.chosen_actions = tf.placeholder(tf.float32, shape=[self.batch_size, self.seq_length, self.number_of_actions], name='chosen_actions')
             self.discounted_rewards = tf.placeholder(tf.float32, shape=[self.batch_size, self.seq_length], name='discounted_rewards')
 
-            inputs = tf.split(self.inputs_ph, self.input_size, axis=1)
+            inputs = tf.split(self.inputs_ph, self.seq_length, axis=1)
 
             if self.naive:
                 output_list = fc_list(self.inputs_ph, self.layer_size)
 
             else:
                 gru_cells = get_gru(self.num_layers, self.layer_size)
-                multi_cell = tf.nn.rnn_cell.MultiRNNCell(gru_cells)
-                initial_state = multi_cell.zero_state(batch_size=self.batch_size, dtype=tf.float32)
+                self.multi_cell = tf.nn.rnn_cell.MultiRNNCell(gru_cells)
+                # initial_state = self.multi_cell.zero_state(batch_size=self.batch_size, dtype=tf.float32)
+                initial_state = tuple([self.gru_state_ph for _ in range(self.num_layers)])
 
                 with tf.variable_scope('rnn_decoder') as scope:
                     # network_output is a tuple of (output_list, final_state)
                     # note that (output_list) is really just the GRU state at each time step
                     # (e.g. the final element in output_list is equal to final_state)
-                    self.network_output = seq2seq.rnn_decoder(inputs, initial_state, multi_cell)
+                    self.network_output = seq2seq.rnn_decoder(inputs, initial_state, self.multi_cell)
                     output_list = self.network_output[0]
                     final_state = self.network_output[1]
 
@@ -107,14 +108,14 @@ class Model:
             # 1 means 'buy everything you can'.
             # Exchange should know how to interpret this number.
 
-            # Actions distribution: [batch_size x input_size x number_of_actions x 2]
+            # Actions distribution: [batch_size x seq_length x number_of_actions x 2]
             # i.e. one mu and one standard deviation for each action at each step of each sequence
             actions_raw = fc_list(output_list, self.number_of_actions * 2, name='action', activation=None)
-            self.actions_op = tf.reshape(actions_raw, [self.batch_size, self.input_size, self.number_of_actions, 2])
+            self.actions_op = tf.reshape(actions_raw, [self.batch_size, self.seq_length, self.number_of_actions, 2])
             self.action_mu = tf.nn.tanh(self.actions_op[:, :, :, 0])
             self.action_sd = tf.nn.softplus(self.actions_op[:, :, :, 1])
 
-            # Value: [batch_size x input_size]
+            # Value: [batch_size x seq_length]
             # i.e. one value per step in the sequence, for all sequences
             self.value_op = fc_list(output_list, 1, name='value', activation=None)
 
@@ -179,12 +180,12 @@ class Model:
 
     # tf.contrib.distributions.Normal(1.,1.).log_prob()
 
-    def get_actions_states_values(self, sess, input_tensor, gru_state = None) :
-        actions,states,values = sess.run([self.actions_op, self.value_op], feed_dict={self.input_ph: input_tensor, self.gru_state_input: gru_state})
-        return actions, states, values
+    def get_actions_states_values(self, sess, input_tensor, gru_state):
+        actions, states, values = sess.run([self.actions_op, self.network_output, self.value_op], feed_dict={self.inputs_ph: input_tensor, self.gru_state_ph: gru_state})
+        return actions, tuple(states[0]), values
 
     def get_state(self):
-        return self.last_input_state, self.gru_state
+        return self.last_input_state, self.gru_state_ph
 
     def get_value(self, sess, input, gru_state = None):
         with tf.Session() as sess:
