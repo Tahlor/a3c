@@ -115,16 +115,19 @@ class Worker(Thread):
 
         # We could do the full GRU training in one shot if the input doesn't depend on our actions
         # When we calculate gradients, we can similarly do it in one batch
-        # TODO: make it so we can pass initial state to the model (make initial_state in the model a placeholder?)
         self.input_tensor = input_tensor
-        self.actions, self.state_sequence, self.values = self.model.get_actions_states_values(sess, input_tensor, self.initial_gru_state)  # returns GAME LENGTH X 1 X 2 [-1 to 1, sd]
+        self.actions, self.state_sequence, self.values = self.model.get_actions_states_values(sess, input_tensor, self.initial_gru_state[1][0])  # returns GAME LENGTH X 1 X 2 [-1 to 1, sd]
 
         # final_state = [batch size, 256]
 
         for i in range(0, GAME_LENGTH):
             # get action prediction
-            action = self.actions[:,i] # batch_size, seq,
-            chosen_action = self.exchange.interpret_action(action[0], action[1])
+            action = self.actions[:, i, 0] # batch_size x 2
+            mean = action[0][0]
+            sd = action[0][1]
+            if sd < 0:
+                sd = -sd
+            chosen_action = self.exchange.interpret_action(mean, sd)
             current_value = self.exchange.get_value()
             R = current_value - previous_value
 
@@ -176,7 +179,8 @@ class Worker(Thread):
         # Accumlate gradients at each time step
         discounted_rewards = []
         policy_advantage = []
-        for n, r in enumerate(self.rewards[:,::-1]):
+        R = 0
+        for n, r in enumerate(self.rewards[::-1]):
             R = r + self.model.discount*R
             discounted_rewards.append(R)
             policy_advantage.append(R - self.values[:,n])
