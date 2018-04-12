@@ -109,14 +109,14 @@ class Worker(Thread):
         else:
             # Prime GRU
             input_tensor = self.exchange.get_model_input(price_range=[starting_state - self.states_to_prime, starting_state], exogenous=True)
-            self.initial_gru_state = self.prime_gru(sess, input_tensor)
+            self.initial_gru_state = self.prime_gru(sess, input_tensor)[1][0]
             input_tensor = self.exchange.get_model_input(price_range=[starting_state, starting_state + GAME_LENGTH], exogenous=True)  # GAME LENGTH X INPUT SIZE
 
 
         # We could do the full GRU training in one shot if the input doesn't depend on our actions
         # When we calculate gradients, we can similarly do it in one batch
         self.input_tensor = input_tensor
-        self.actions, self.state_sequence, self.values = self.model.get_actions_states_values(sess, input_tensor, self.initial_gru_state[1][0])  # returns GAME LENGTH X 1 X 2 [-1 to 1, sd]
+        self.actions, self.state_sequence, self.values = self.model.get_actions_states_values(sess, input_tensor, self.initial_gru_state)  # returns GAME LENGTH X 1 X 2 [-1 to 1, sd]
 
         # final_state = [batch size, 256]
 
@@ -176,7 +176,7 @@ class Worker(Thread):
 
         R = self.values[:,-1] # get value in last state
 
-        # Accumlate gradients at each time step
+        # Accumulate gradients at each time step
         discounted_rewards = []
         policy_advantage = []
 
@@ -191,11 +191,9 @@ class Worker(Thread):
         self.update_values(sess)
 
     def update_policy(self, sess):
-        with tf.Session(graph=self.model.graph) as sess:
-            x = sess.run([self.model.update_policy()], feed_dict={self.model.input_ph: self.input_tensor, self.model.gru_state: self.initial_gru_state,
+        sess.run([self.model.update_policy()], feed_dict={self.model.inputs_ph: self.input_tensor, self.model.gru_state_ph: self.initial_gru_state,
                                                                   self.model.policy_advantage: self.policy_advantage, self.model.chosen_actions: self.chosen_actions})
 
     def update_values(self, sess):
-        with tf.Session(graph=self.model.graph) as sess:
-            x = sess.run([self.model.update_value()], feed_dict={self.model.input_ph: self.input_tensor, self.model.gru_state: self.initial_gru_state,
+        sess.run([self.model.update_value()], feed_dict={self.model.inputs_ph: self.input_tensor, self.model.gru_state_ph: self.initial_gru_state,
                                                                   self.model.discounted_rewards: self.discounted_rewards})
