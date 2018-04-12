@@ -174,12 +174,12 @@ class Worker(Thread):
         # states is batch x T x GRU SIZE
         # input_tensor is batch x T X INPUT_SIZE
 
-        r = self.values[:,-1] # get value in last state
+        R = self.values[:,-1] # get value in last state
 
         # Accumlate gradients at each time step
         discounted_rewards = []
         policy_advantage = []
-        R = 0
+
         for n, r in enumerate(self.rewards[::-1]):
             R = r + self.model.discount*R
             discounted_rewards.append(R)
@@ -197,5 +197,5 @@ class Worker(Thread):
 
     def update_values(self, sess):
         with tf.Session(graph=self.model.graph) as sess:
-            x = sess.run([self.model.update_values()], feed_dict={self.model.input_ph: self.input_tensor, self.model.gru_state: self.initial_gru_state,
+            x = sess.run([self.model.update_value()], feed_dict={self.model.input_ph: self.input_tensor, self.model.gru_state: self.initial_gru_state,
                                                                   self.model.discounted_rewards: self.discounted_rewards})

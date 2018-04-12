@@ -141,7 +141,7 @@ class Model:
         # Vector of continuous probabilites for each action
         # Vector of covariances for each action
 
-        action_dist = tf.contrib.distributions.Normal(self.action_mus, self.action_sds) # [batch, t, # of actions]
+        action_dist = tf.contrib.distributions.Normal(self.action_mu, self.action_sd) # [batch, t, # of actions]
 
         # Get log prob given chosen actions
         log_prob = action_dist.log_prob(self.chosen_actions) # probability < 1 , so negative value here
