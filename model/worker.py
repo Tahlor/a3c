@@ -18,7 +18,7 @@ DATA = r"./data/BTC_USD_100_FREQ.npy"
 # Make some toy data
 
 class Worker(Thread):
-    def __init__(self, global_model, T, T_max, t_max=10, deep_model = True, states_to_prime = 1000):
+    def __init__(self, global_model, T, T_max, t_max=10, deep_model = True, states_to_prime = 1000, summary_writer=None):
         self.t = tf.Variable(initial_value=1, trainable=False)
         self.T = T
         self.T_max = T_max
@@ -31,6 +31,7 @@ class Worker(Thread):
 
         # For now, just interface with main model
         self.model = self.global_model
+        self.summary_writer = summary_writer
 
         # Each worker has an exchange; can be reset to any state
         self.exchange = Exchange(DATA, time_interval=60)
@@ -71,7 +72,7 @@ class Worker(Thread):
             # Prime GRU
             input_tensor = self.exchange.get_model_input(price_range=[starting_state - self.states_to_prime, starting_state], exogenous=True)
             self.initial_gru_state = self.prime_gru(sess, input_tensor)[1][0]
-            input_tensor = self.exchange.get_model_input(price_range=[starting_state, starting_state + GAME_LENGTH], exogenous=True)  # GAME LENGTH X INPUT SIZE
+            input_tensor = self.exchange.get_model_input(price_range=[starting_state, starting_state + turns], exogenous=True)  # GAME LENGTH X INPUT SIZE
 
 
         # We could do the full GRU training in one shot if the input doesn't depend on our actions
@@ -81,7 +82,7 @@ class Worker(Thread):
 
         # final_state = [batch size, 256]
 
-        for i in range(0, GAME_LENGTH):
+        for i in range(0, turns):
             # get action prediction
             action = self.actions[:, i, 0] # batch_size x 2
             mean = action[0][0]
@@ -127,6 +128,7 @@ class Worker(Thread):
                     if self.T_max is not None and next(self.T) >= self.T_max:
                         tf.logging.info("Reached global step {}. Stopping.".format(self.T))
                         coord.request_stop()
+
                         return
 
                     # Update the global networks
@@ -161,11 +163,17 @@ class Worker(Thread):
     def update_policy(self, sess):
         policy_train_op = self.model.update_policy()
         sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
-        sess.run([policy_train_op], feed_dict={self.model.inputs_ph: self.input_tensor, self.model.gru_state_ph: self.initial_gru_state,
+        _, loss = sess.run([policy_train_op, self.model.policy_loss], feed_dict={self.model.inputs_ph: self.input_tensor, self.model.gru_state_ph: self.initial_gru_state,
                                                                   self.model.policy_advantage: self.policy_advantage, self.model.chosen_actions: self.chosen_actions})
+        self.summary_writer.graph = self.model.graph
+        self.summary_writer.add_summary(tf.summary.scalar('policy_loss', loss))
+
 
     def update_values(self, sess):
         value_train_op = self.model.update_value()
         sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
-        sess.run([value_train_op], feed_dict={self.model.inputs_ph: self.input_tensor, self.model.gru_state_ph: self.initial_gru_state,
+        _, loss = sess.run([value_train_op, self.model.value_loss], feed_dict={self.model.inputs_ph: self.input_tensor, self.model.gru_state_ph: self.initial_gru_state,
                                                                   self.model.discounted_rewards: self.discounted_rewards})
+        self.summary_writer.graph = self.model.graph
+        self.summary_writer.add_summary('value_loss', tf.summary.scalar(loss))
+

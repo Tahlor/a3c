@@ -18,9 +18,9 @@ if import_path not in sys.path:
 
 from exchange import Exchange
 
-tf.flags.DEFINE_string("model_dir", "/tmp/", "Directory to write Tensorboard summaries and videos to.")
+tf.flags.DEFINE_string("model_dir", "../tmp/", "Directory to write Tensorboard summaries and videos to.")
 tf.flags.DEFINE_string("env", "exchange_v1.0", "Name of game")
-tf.flags.DEFINE_integer("t_max", 5, "Number of steps before performing an update")
+tf.flags.DEFINE_integer("t_max", 1000, "Number of steps before performing an update")
 tf.flags.DEFINE_integer("max_global_steps", None, "Stop training after this many steps in the environment. Defaults to running indefinitely.")
 tf.flags.DEFINE_integer("eval_every", 300, "Evaluate the policy every N seconds")
 tf.flags.DEFINE_boolean("reset", False, "If set, delete the existing model directory and start training from scratch.")
@@ -54,7 +54,7 @@ summary_writer = tf.summary.FileWriter(os.path.join(MODEL_DIR, "train"))
 # saver = tf.train.Saver(keep_checkpoint_every_n_hours=0.5, max_to_keep=3)
 
 # Initialize model (value and policy nets)
-m = Model()
+m = Model(seq_length=FLAGS.t_max)
 exchange = Exchange(DATA)
 
 # Keep track of steps
@@ -71,7 +71,7 @@ for worker_id in range(NUM_WORKERS):
         worker_summary_writer = summary_writer
 
     # Initialize new workers
-    worker = Worker(m, T, 10)
+    worker = Worker(m, T, 1, states_to_prime=FLAGS.t_max, summary_writer=worker_summary_writer)
     workers.append(worker)
 
 # Have each worker somewhat randomly hop around to different dates
@@ -99,25 +99,6 @@ with tf.Session(graph=m.graph) as sess:
 
     # Wait for all workers to finish
     coord.join(worker_threads)
+    summary_writer.close()
 
-    # Ryan's stuff
-    # for i in range(1000):
-    #
-    #     input_vector = np.random.rand(1, 10)
-    #     target_vector = np.random.rand(1)*2.0 - 1.0
-    #     # if target_vector[0][0] > 0.5:
-    #     #     target_vector[0][0] = 1
-    #     #     target_vector[0][1] = 0
-    #     # else:
-    #     #     target_vector[0][0] = 0
-    #     #     target_vector[0][1] = 1
-    #
-    #     _, av, vv, lv = sess.run([m.optimizer, m.actions_op, m.value_op, m.loss_op],
-    #                              feed_dict={m.inputs_ph: input_vector, m.targets_ph: target_vector})
-    #
-    #     print("Action vector:" + str(av))
-    #     print("Value approx.: " + str(vv))
-    #     print("Loss: " + str(lv))
-    #     print('')
-
-print('hi')
+print('DONE')
