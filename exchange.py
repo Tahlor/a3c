@@ -62,7 +62,7 @@ class Exchange:
         self.price_change = self.price_changes[0]
         self.permit_short = False
         if not time_interval is None:
-            print(self.data[0:30])
+            # print(self.data[0:30])
             self.generate_prices_at_time(time_interval)
             self.data = self.prices_at_time
 
@@ -106,7 +106,7 @@ class Exchange:
         backsteps = min(distance, state_range[0]) # can't go before beginning of time
         state_range = [x - backsteps for x in state_range]
         price_changes = np.log(self.data[slice(*state_range)]["price"].astype('float64')*1.0)*100 #np.log
-        print(type(price_changes))
+        # print(type(price_changes))
         price_changes = price_changes[distance:] - price_changes[:-distance]
 
 

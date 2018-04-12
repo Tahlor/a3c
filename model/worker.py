@@ -97,7 +97,7 @@ class Worker(Thread):
             rewards.append(R)
             previous_value = self.exchange.get_value()
 
-        self.chosen_actions = np.asarray(chosen_actions)
+        self.chosen_actions = np.asarray(chosen_actions).reshape([self.model.batch_size, GAME_LENGTH, self.model.number_of_actions])
         self.rewards = np.asarray(rewards)
 
         # self.input_tensor, self.actions, self.states, self.values, self.chosen_actions, self.rewards
@@ -110,12 +110,14 @@ class Worker(Thread):
 
             try:
                 while not coord.should_stop():
+                    print("Running step #{}".format(str(self.T)))
                     # Copy Parameters from the global networks
                     #sess.run(self.copy_params_op)
                     # self.loadNetworkFromSnapshot()
 
                     # Collect some experience
                     #transitions, local_t, global_t = self.play_game(t_max, sess)
+                    print("Playing game for {} turns".format(t_max))
                     self.play_game2(sess, turns=t_max)
 
                     if self.T_max is not None and next(self.T) >= self.T_max:
@@ -124,6 +126,7 @@ class Worker(Thread):
                         return
 
                     # Update the global networks
+                    print("Updating parameters")
                     self.update(sess)
 
             except tf.errors.CancelledError:
@@ -146,15 +149,19 @@ class Worker(Thread):
             discounted_rewards.append(R)
             policy_advantage.append(R - self.values[:,n])
 
-        self.discounted_rewards = np.asarray(discounted_rewards)[:, ::-1] # batch, t , make it go forward again
-        self.policy_advantage = np.asarray(policy_advantage)
+        self.discounted_rewards = np.asarray(discounted_rewards)[:, ::-1].T # batch, t , make it go forward again
+        self.policy_advantage = np.asarray(policy_advantage).T
         self.update_policy(sess)
         self.update_values(sess)
 
     def update_policy(self, sess):
-        sess.run([self.model.update_policy()], feed_dict={self.model.inputs_ph: self.input_tensor, self.model.gru_state_ph: self.initial_gru_state,
+        policy_train_op = self.model.update_policy()
+        sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
+        sess.run([policy_train_op], feed_dict={self.model.inputs_ph: self.input_tensor, self.model.gru_state_ph: self.initial_gru_state,
                                                                   self.model.policy_advantage: self.policy_advantage, self.model.chosen_actions: self.chosen_actions})
 
     def update_values(self, sess):
-        sess.run([self.model.update_value()], feed_dict={self.model.inputs_ph: self.input_tensor, self.model.gru_state_ph: self.initial_gru_state,
+        value_train_op = self.model.update_value()
+        sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
+        sess.run([value_train_op], feed_dict={self.model.inputs_ph: self.input_tensor, self.model.gru_state_ph: self.initial_gru_state,
                                                                   self.model.discounted_rewards: self.discounted_rewards})

@@ -162,7 +162,7 @@ class Model:
         self.optimizer = tf.train.RMSPropOptimizer(0.00025, 0.99, 0.0, 1e-6)
         self.policy_grads_and_vars = self.optimizer.compute_gradients(self.policy_loss)
         self.policy_grads_and_vars = [[grad, var] for grad, var in self.policy_grads_and_vars if grad is not None]
-        self.policy_train_op = self.optimizer.apply_gradients(self.policy_grads_and_vars, global_step=tf.contrib.framework.get_global_step())
+        self.policy_train_op = self.optimizer.apply_gradients(self.policy_grads_and_vars, global_step=tf.train.get_global_step())
         return self.policy_train_op
 
     def update_value(self):
@@ -175,7 +175,7 @@ class Model:
         self.optimizer = tf.train.RMSPropOptimizer(0.00025, 0.99, 0.0, 1e-6)
         self.value_grads_and_vars = self.optimizer.compute_gradients(self.value_loss)
         self.value_grads_and_vars = [[grad, var] for grad, var in self.value_grads_and_vars if grad is not None]
-        self.value_train_op = self.optimizer.apply_gradients(self.value_grads_and_vars, global_step=tf.contrib.framework.get_global_step())
+        self.value_train_op = self.optimizer.apply_gradients(self.value_grads_and_vars, global_step=tf.train.get_global_step())
         return self.value_train_op
 
 
