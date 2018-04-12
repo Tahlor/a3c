@@ -116,7 +116,12 @@ class Worker(Thread):
 
                     # Collect some experience
                     #transitions, local_t, global_t = self.play_game(t_max, sess)
-                    self.play_game2(sess, turns=t_max)
+
+                    # Pre choose starting states without replacement:
+                    # state_range = [int(x/exchange.game_length) for x in self.exchange.state_range]
+                    # (np.random.choice(state_range[1]-state_range[0] , state_range[1]-state_range[0] , replace=False) + state_range[0] ) * exchange.game_length
+
+                    self.play_game2(sess, turns=t_max, starting_state=np.random.randint(*self.exchange.state_range) )
 
                     if self.T_max is not None and next(self.T) >= self.T_max:
                         tf.logging.info("Reached global step {}. Stopping.".format(self.T))

@@ -52,7 +52,13 @@ class Exchange:
         self.log_prices = np.log(np.copy(self.data[:]["price"].astype("float64")))
         self.log_price_changes = self.log_prices[1:] - self.log_prices[0:-1]
         self.gru_prime_length = self.game_length
-        self.state = max(self.naive_sample_pattern +  [self.gru_prime_length, 3000]) # don't start at 0, make sure we can go back in time etc.
+
+        min_state = max(self.naive_sample_pattern +  [self.gru_prime_length, 3000]) # don't start at 0, make sure we can go back in time etc.
+        max_state = len(self.log_prices) - self.game_length -  10 # give us a small buffer
+        self.state_range = [min_state, max_state]
+        self.state = min_state
+
+
         self.starting_cash = cash
         self.cash = cash
         self.holdings = holdings
