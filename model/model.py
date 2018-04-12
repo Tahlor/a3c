@@ -147,8 +147,9 @@ class Model:
         log_prob = action_dist.log_prob(self.chosen_actions) # probability < 1 , so negative value here
 
         # Calculate entropy
-        # entropy = -1/2 * (tf.log(2*self.action_mus * math.pi * self.action_sds ** 2) + 1) # N steps X # of actions
-        entropy = log_prob.entropy() # [batch, t, # of actions], negative
+        entropy = -1/2 * (tf.log(2*self.action_mu * math.pi * self.action_sd ** 2) + 1) # N steps X # of actions
+        # entropy = log_prob.entropy() # [batch, t, # of actions], negative
+
 
         # Advantage function - exogenous to the policy network
         # advantage = tf.subtract(self.rewards, self.value_op, name='advantage')  #[ batch size=1 * t ]
@@ -156,7 +157,7 @@ class Model:
         # Loss -- entropy is higher with high uncertainty -- ensures exploration at first,
         #  e.g. even if an OK path is found at first, high entropy => higher loss, so it will take
         #   that good path with a grain of salt
-        self.policy_loss =  -tf.reduce_mean(log_prob * self.policy_advantages + entropy * self.entropy_weight)
+        self.policy_loss =  -tf.reduce_mean(log_prob * self.policy_advantage + entropy * self.entropy_weight)
 
         self.optimizer = tf.train.RMSPropOptimizer(0.00025, 0.99, 0.0, 1e-6)
         self.policy_grads_and_vars = self.optimizer.compute_gradients(self.policy_loss)
@@ -187,13 +188,13 @@ class Model:
     def get_state(self):
         return self.last_input_state, self.gru_state_ph
 
-    def get_value(self, sess, input, gru_state = None):
+    def get_value(self, sess, input, gru_state):
         with tf.Session() as sess:
-            value = sess.run(self.value_op, feed_dict={self.input_ph: input, self.gru_state_input: gru_state})
+            value = sess.run(self.value_op, feed_dict={self.inputs_ph: input, self.gru_state_ph: gru_state})
         return value, gru_state
 
-    def get_policy(self, sess, input, gru_state = None):
+    def get_policy(self, sess, input, gru_state):
         with tf.Session() as sess:
-            policy = sess.run(self.policy_op, feed_dict={self.input_ph: input, self.gru_state_input: gru_state})
+            policy = sess.run(self.policy_op, feed_dict={self.inputs_ph: input, self.gru_state_ph: gru_state})
         return policy, gru_state
 
