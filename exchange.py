@@ -48,13 +48,14 @@ class Exchange:
         self.game_length = 1000
 
         self.data = np.load(data_stream)
-        self.state = 1
+        self.state = 0
         self.starting_cash = cash
         self.cash = cash
         self.holdings = holdings
         self.actions = actions
         self.transaction_cost = transaction_cost
-        self.generate_log_prices()
+        self.price_changes = self.generate_log_prices(1, [0,len(self.data)]) # these are the price changes for the entire exchange
+        self.price_change = self.price_changes[0]
         self.permit_short = False
         if not time_interval is None:
             print(self.data[0:30])
@@ -69,7 +70,8 @@ class Exchange:
         if exogenous:
             to_return = []
             for _ in range(batch_size):
-                prices = np.log(self.data[slice(*price_range)]["price"])
+                #prices = np.log(self.data[slice(*price_range)]["price"])
+                prices = self.generate_log_prices()
                 positions = self.data[slice(*price_range)]["side"]
 
                 combined = np.empty([prices.size + positions.size], dtype=prices.dtype)
@@ -78,24 +80,32 @@ class Exchange:
 
                 to_return.append(combined)
 
-            ### FINISH
             return np.asarray(to_return)
         else:
             return self.price_change, self.holdings, self.cash, self.data[self.state]["side"]
 
-    def generate_log_prices(self, distance = 1):
+    def generate_log_prices(self, distance = 1, range = None):
         # distance - comparison price; e.g. 5 implies compare this price to the price 5 transactions ago
+        # 1 is the previous price
         # create log prices
         # current price - previous price
-        self.price_changes = np.log(self.data[:]["price"]) * 1000.
-        self.price_changes = self.price_changes[distance:] - self.price_changes[:-distance]
-        self.price_changes = np.insert(self.price_changes, 0, 0) # no change for first state
-        return self.price_changes
+        if range is None:
+            range = [self.state, self.state + self.game_length] # generate price changes for game
+        backsteps = min(distance, range[0]) # can't go before beginning of time
+        range = [x - backsteps for x in range]
+        price_changes = np.log(self.data[slice(*range)]["price"].astype('float64')*1.0)*100 #np.log
+        print(type(price_changes))
+        price_changes = price_changes[distance:] - price_changes[:-distance]
+
+        if range[0]==0:
+            price_changes = np.insert(price_changes, 0, 0) # no change for first state;
+        #  fill in for stuff
+        return price_changes
 
     def get_next_state(self):
         self.state += 1
         self.current_price = self.data[self.state]["price"]
-        self.price_change = self.price_changes[self.state]
+        self.price_change = self.price_changes[self.state] # use the log price changes
         return self.data[self.state]
 
     def goto_state(self, state):
@@ -206,7 +216,7 @@ class Exchange:
     def get_perc_change(self):
         return self.current_price/self.data[self.state-1]["price"]
         
-    # needs to be a value between -1 and 1
+
     def interpret_action(self, action, sd, continuous = True):
         # this normalizes action to [min, max]
         if continuous:
@@ -245,14 +255,22 @@ def test_buying_and_selling(myExchange):
 def test_getting_prices(myExchange):
     #x = myExchange.get_price_history_func(10000)
 
-    x = myExchange.generate_log_prices(10)
-    print(x)
+
+    x = myExchange.generate_log_prices(4, [myExchange.state, myExchange.state + 10])
+    print(x[:10])
+    #print(myExchange.data[slice(myExchange.state, myExchange.state + 10)]["price"])
+
+    #print(myExchange.get_price_history(n=1, freq=1))
 
 if __name__ == "__main__":
+    np.set_printoptions(formatter={'int_kind': lambda x: "{:0>3d}".format(x)})
+    np.set_printoptions(formatter={'float_kind': lambda x: "{0:6.3f}".format(x)})
+
     # myExchange = Exchange(DATA, time_interval=60)
     myExchange = Exchange(DATA)
     myExchange.state = 10000
-    print(myExchange.get_price_history(n = 1, freq=1))
     test_getting_prices(myExchange)
+    #print(myExchange.get_price_history(n = 1, freq=1))
+
 
 
