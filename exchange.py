@@ -43,11 +43,14 @@ class Exchange:
         # Game parameters
         self.number_of_input_prices_for_basic = 10
         self.number_of_inputs_for_basic = self.number_of_input_prices_for_basic # *2 # for prices and positions
-        self.basic_sample_frequency = 100
-
         self.game_length = 1000
+        self.naive_sample_pattern = [2**x for x in range(2,10)] # for naive model, which previous prices to look at
 
         self.data = np.load(data_stream)
+        self.vanilla_prices = self.data[:]["price"]
+        self.log_prices = np.log(np.copy(self.data[:]["price"].astype("float64")))
+
+
         self.state = 0
         self.starting_cash = cash
         self.cash = cash
@@ -97,9 +100,9 @@ class Exchange:
         print(type(price_changes))
         price_changes = price_changes[distance:] - price_changes[:-distance]
 
-        if range[0]==0:
-            price_changes = np.insert(price_changes, 0, 0) # no change for first state;
-        #  fill in for stuff
+
+        price_changes = np.insert(price_changes, 0, [0] * (distance-backsteps)) # no change for first state;
+
         return price_changes
 
     def get_next_state(self):
@@ -117,30 +120,85 @@ class Exchange:
         return self.state >= len(self.data)
 
     # get history - n = how many rows to get, freq = how often to get them
-    def get_price_history_no_batch(self, current_id = None, n = 100, freq=100):
+    # this is only good for a single step in one game in the basic model
+    def get_price_history_step(self, current_id = None, n = 100, freq=100):
         if current_id is None:
             current_id = n*freq
         elif current_id < n * freq:
             print("Initial trade id must be greater than freq * n")
         return np.copy(self.data[current_id:current_id-(n*freq):-freq]["price"])
 
-    def get_price_history(self, current_id=None, n=100, freq=100, batch= True, ):
-        if current_id is None:
-            current_id = self.state
+    def get_batch_price_indices(self, state_range, freq, backsamples = None):
+        if backsamples is None:
+            backsamples = self.number_of_input_prices_for_basic
+
+        # Handle a list input - list should be of form [1,4,9] to bring in prices from 4th previous price, 9th previous price, etc.
+        if type(freq) == type([]):
+            backsamples = len(freq)
+            further_back_ref = max(freq)
+
+            # Add a 0 if needed
+            if freq[0] != 0:
+                pattern = np.insert(0 - np.array(freq), 0, 0)
+            else:
+                pattern = freq
+        else:
+            further_back_ref = freq * backsamples # e.g. the earliest price I need
+            pattern = np.array(range(0, -further_back_ref - 1, -freq))
+
+        # Pattern will now look like [0, -1, -4 etc.]
+
+        ### further_back_ref needs to be greater than start! ###
+
+        size = state_range[1]-state_range[0]  # size of game
+        start = state_range[0]
+        end = start + size
+
+        m = range(start - further_back_ref, end)
+        x = np.asarray(range(start - further_back_ref, end)) # create an array starting at the earliest index value you need
+
+        # [backsamples-1::-1][::-1]
+        z = np.tile(x[pattern + further_back_ref], (size, 1)) + np.tile(np.array(range(0, size))[:, None], backsamples + 1)
+
+        return z
+
+    # This will return a single games worth of steps for the basic model
+    # There is no "batching" however
+    # Return a [1 (batch size) x seq length x # of input prices)
+    def get_price_history(self, prices = None, start = None, range = None, backsamples=None, freq=None, batch= True, calc_diff = True):
+        if prices is None:
+            prices = self.log_prices
+        if range is None and start is None:
+            range = [self.state, self.state+self.game_length]
+        if freq is None:
+            freq = self.game_length/10
+        if backsamples is None:
+            backsamples = self.number_of_input_prices_for_basic
+
         if not batch:
-            return self.get_price_history_no_batch(self, current_id=current_id, n=n, freq=freq)
+            return self.get_price_history_step(self, current_id=start, n=backsamples, freq=freq)
         else:
             # For basic model, return a tensor of previous inputs
             # Array of data
 
             # Override default freq
-            freq = self.number_of_input_prices_for_basic
+            # There are two frequencies -- one is the frequency of previous time steps (e.g. for the naive model)
+            # Other frequency is the comparison price for % change calculation - kind of a gradient over that period
+            price_indices = self.get_batch_price_indices(range=range, freq=freq, backsamples=backsamples)
 
-            list_of_prices = self.generate_log_prices(distance = freq) # price change since last input -- freq can be anything though
-            # Pattern (every 10th time)
-            m = np.array(range(current_id, current_id + self.game_length, freq))
-            np.tile(list_of_prices[m], (self.game_length, 1)) + np.tile(list_of_prices[:, None], freq) - 2 * self.game_length
+            # Constant shift
+            #comparison_prices_for_game = self.get_batch_prices(prices=self.log_prices, range=range-freq, freq=freq, backsamples=backsamples)
+            # (prices_for_game - comparison_prices_for_game)[:, None]
+            # Relative shift:
+            if not calc_diff:
+                return prices[price_indices]
+            else:
+                return prices[price_indices][:,0:-1] - prices[price_indices][:,1:]
 
+    def get_model_input_naive(self):
+        prices = self.get_price_history(freq=self.naive_sample_pattern, batch= True, )
+        buy_sell = self.get_batch_prices(prices=self.data[:]["side"], freq=self.naive_sample_pattern, )[:None] # add a batch dimension
+        return np.concatenate((prices,buy_sell), 2) #[1 (batches x seq length x prev_states * 2)] ; 2 is for prices and sides
 
     # same as above, but can optionally define a list [0,10,50,100] of previous time steps, or a function
     def get_price_history_func(self, current_id = None, n = 100, pattern=lambda x: x**2):
@@ -246,21 +304,22 @@ class Exchange:
 def test_buying_and_selling(myExchange):
     #print(x)
     # action can be a vector -1 = 1
-    action = 2*(action-np.average(self.actions))/(max(self.actions)-min(self.actions))
+    action = 2*(action-np.average(myExchange.actions))/(max(myExchange.actions)-min(myExchange.actions))
     if action < 0:
-        self.sell_security(coin = self.holdings * abs(action))
+        myExchange.sell_security(coin = myExchange.holdings * abs(action))
     elif action > 0:
-        self.buy_security(currency = self.cash * abs(action))
+        myExchange.buy_security(currency = myExchange.cash * abs(action))
 
 def test_getting_prices(myExchange):
     #x = myExchange.get_price_history_func(10000)
 
 
-    x = myExchange.generate_log_prices(4, [myExchange.state, myExchange.state + 10])
-    print(x[:10])
+    #x = myExchange.generate_log_prices(4, [myExchange.state, myExchange.state + 10])
+    #print(x[:10])
     #print(myExchange.data[slice(myExchange.state, myExchange.state + 10)]["price"])
 
-    #print(myExchange.get_price_history(n=1, freq=1))
+    #print(myExchange.get_price_history(backsamples=1, freq=1))
+    print(myExchange.get_model_input_naive())
 
 if __name__ == "__main__":
     np.set_printoptions(formatter={'int_kind': lambda x: "{:0>3d}".format(x)})
@@ -271,6 +330,3 @@ if __name__ == "__main__":
     myExchange.state = 10000
     test_getting_prices(myExchange)
     #print(myExchange.get_price_history(n = 1, freq=1))
-
-
-
