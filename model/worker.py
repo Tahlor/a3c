@@ -56,40 +56,6 @@ class Worker(Thread):
         initial_state = np.zeros([self.model.batch_size, self.model.layer_size])
         return sess.run(self.model.network_output, feed_dict={self.model.inputs_ph: input_tensor, self.model.gru_state_ph:initial_state})
 
-    def play_game(self, sess, turns=GAME_LENGTH, starting_state=1000):
-        if self.exchange is None:
-            self.exchange = Exchange(DATA, cash=10000, holdings=0, actions=[-1, 1])
-        previous_value = self.exchange.cash
-        self.exchange.goto_state(starting_state)
-        actions = []
-        rewards = []
-        states = []
-        # Prime e.g. LSTM
-        historical_prices = self.exchange.get_price_history(current_id=starting_state, n=self.model.input_size,
-                                                       freq=100)  # get 100 previous prices, every 100 steps
-        hp_reshaped = historical_prices.reshape([1,10])
-
-        # prime_lstm()
-
-        # We could do the full GRU training in one shot if the input doesn't depend on our actions
-        # When we calculate gradients, we can similarly do it in one batch
-
-        for i in range(0, GAME_LENGTH):
-            # get action prediction
-            # action = np.random.randn() - .5
-            action = self.model.get_action(sess, hp_reshaped) # possibly get all actions in advance
-
-            self.exchange.interpret_action(action)
-            current_value = self.exchange.get_value()
-            R = current_value - previous_value
-
-            # Record actions
-            actions.append(action)
-            rewards.append(R)
-            previous_value = self.exchange.get_value()
-            states.append(self.model.get_state()) # returns hidden/cell states, need to combine with input state
-        return actions, rewards, states
-
     def play_game2(self, sess, turns=GAME_LENGTH, starting_state=1000):
         if self.exchange is None:
             self.exchange = Exchange(DATA, cash=10000, holdings=0, actions=[-1, 1])
@@ -100,12 +66,7 @@ class Worker(Thread):
 
         # Prime e.g. LSTM
         if not self.deep_model:
-            historical_prices = self.exchange.get_price_history(current_id=starting_state, n=self.model.input_size,
-                                                           freq=100)  # get 100 previous prices, every 100 steps
-            input_tensor = historical_prices.reshape([1,10]) # GAME LENGTH X INPUT SIZE
-            # Previous X prices changes at current state relative to each other
-            # Batch to game length
-
+            input_tensor = self.exchange.get_model_input_naive() # BATCH X SEQ X (Price, Side)
         else:
             # Prime GRU
             input_tensor = self.exchange.get_model_input(price_range=[starting_state - self.states_to_prime, starting_state], exogenous=True)
