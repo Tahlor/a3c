@@ -87,13 +87,21 @@ class Exchange:
         else:
             return self.price_change, self.holdings, self.cash, self.data[self.state]["side"]
 
-    def generate_log_prices(self, distance = 1, range = None):
+    def generate_log_prices(self, distance=1, range=None):
         # distance - comparison price; e.g. 5 implies compare this price to the price 5 transactions ago
         # 1 is the previous price
         # create log prices
         # current price - previous price
         if range is None:
-            range = [self.state, self.state + self.game_length] # generate price changes for game
+            # generate price changes for game
+            if self.state > 0:
+                # in this case we have to get price one step before the game starts
+                # so we can have a valid price change for the first state in the game
+                # otherwise this list ends up being GAME_LENGTH - 1 long and things break
+                range = [self.state-distance, self.state + self.game_length]
+            else:
+                # if game starts at beginning of data, we'll insert a 0 later to make the size of the list work out
+                range = [self.state, self.state + self.game_length]  # generate price changes for game
         backsteps = min(distance, range[0]) # can't go before beginning of time
         range = [x - backsteps for x in range]
         price_changes = np.log(self.data[slice(*range)]["price"].astype('float64')*1.0)*100 #np.log
