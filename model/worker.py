@@ -162,18 +162,20 @@ class Worker(Thread):
 
     def update_policy(self, sess):
         policy_train_op = self.model.update_policy()
+        policy_loss_summary = tf.summary.scalar('policy_loss', self.model.policy_loss)
         sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
-        _, loss = sess.run([policy_train_op, self.model.policy_loss], feed_dict={self.model.inputs_ph: self.input_tensor, self.model.gru_state_ph: self.initial_gru_state,
+        _, loss = sess.run([policy_train_op, policy_loss_summary], feed_dict={self.model.inputs_ph: self.input_tensor, self.model.gru_state_ph: self.initial_gru_state,
                                                                   self.model.policy_advantage: self.policy_advantage, self.model.chosen_actions: self.chosen_actions})
         self.summary_writer.graph = self.model.graph
-        self.summary_writer.add_summary(tf.summary.scalar('policy_loss', loss))
+        self.summary_writer.add_summary(loss)
 
 
     def update_values(self, sess):
         value_train_op = self.model.update_value()
+        value_loss_summary = tf.summary.scalar('value_loss', self.model.value_loss)
         sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
-        _, loss = sess.run([value_train_op, self.model.value_loss], feed_dict={self.model.inputs_ph: self.input_tensor, self.model.gru_state_ph: self.initial_gru_state,
+        _, loss = sess.run([value_train_op, value_loss_summary], feed_dict={self.model.inputs_ph: self.input_tensor, self.model.gru_state_ph: self.initial_gru_state,
                                                                   self.model.discounted_rewards: self.discounted_rewards})
         self.summary_writer.graph = self.model.graph
-        self.summary_writer.add_summary('value_loss', tf.summary.scalar(loss))
+        self.summary_writer.add_summary(loss)
 
