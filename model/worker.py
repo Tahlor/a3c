@@ -127,6 +127,7 @@ class Worker(Thread):
 
                     if self.T_max is not None and next(self.T) >= self.T_max:
                         tf.logging.info("Reached global step {}. Stopping.".format(self.T))
+                        print("Reached global step {}. Stopping.".format(self.T))
                         coord.request_stop()
 
                         return
