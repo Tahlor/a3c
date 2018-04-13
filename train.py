@@ -21,7 +21,7 @@ from exchange import Exchange
 tf.flags.DEFINE_string("model_dir", "../tmp/", "Directory to write Tensorboard summaries and videos to.")
 tf.flags.DEFINE_string("env", "exchange_v1.0", "Name of game")
 tf.flags.DEFINE_integer("t_max", 1000, "Number of steps before performing an update")
-tf.flags.DEFINE_integer("max_global_steps", None, "Stop training after this many steps in the environment. Defaults to running indefinitely.")
+tf.flags.DEFINE_integer("max_global_steps", 2, "Stop training after this many steps in the environment. Defaults to running indefinitely.")
 tf.flags.DEFINE_integer("eval_every", 300, "Evaluate the policy every N seconds")
 tf.flags.DEFINE_boolean("reset", False, "If set, delete the existing model directory and start training from scratch.")
 tf.flags.DEFINE_integer("parallelism", None, "Number of threads to run. If not set we run [num_cpu_cores] threads.")
@@ -59,7 +59,7 @@ exchange = Exchange(DATA)
 
 # Keep track of steps
 global_step = tf.Variable(0, name="global_step", trainable=False)
-T = itertools.count()
+T = itertools.count(1)
 
 # Create workers
 workers = []
@@ -71,7 +71,7 @@ for worker_id in range(NUM_WORKERS):
         worker_summary_writer = summary_writer
 
     # Initialize new workers
-    worker = Worker(m, T, 1, states_to_prime=FLAGS.t_max, summary_writer=worker_summary_writer)
+    worker = Worker(m, T, FLAGS.max_global_steps, states_to_prime=FLAGS.t_max, summary_writer=worker_summary_writer)
     workers.append(worker)
 
 # Have each worker somewhat randomly hop around to different dates

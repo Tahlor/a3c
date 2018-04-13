@@ -109,9 +109,22 @@ class Worker(Thread):
             #  Initial state
             # self.state = atari_helpers.atari_make_initial_state(self.sp.process(self.env.reset()))
 
+            self.policy_train_op = self.model.update_policy()
+            self.policy_loss_summary = tf.summary.scalar('policy_loss', self.model.policy_loss)
+
+            self.value_train_op = self.model.update_value()
+            self.value_loss_summary = tf.summary.scalar('value_loss', self.model.value_loss)
+
+            self.summary_writer.graph = self.model.graph
+
             try:
                 while not coord.should_stop():
-                    print("Running step #{}".format(str(self.T)))
+                    count_string = str(self.T)
+                    end_idx = count_string.find(',')
+                    if end_idx == -1:
+                        end_idx = count_string.find(')')
+                    count_string = count_string[6:end_idx]
+                    print("Running step #{}".format(count_string))
                     # Copy Parameters from the global networks
                     #sess.run(self.copy_params_op)
                     # self.loadNetworkFromSnapshot()
@@ -125,16 +138,16 @@ class Worker(Thread):
                     print("Playing game for {} turns".format(t_max))
                     self.play_game2(sess, turns=t_max, starting_state=np.random.randint(*self.exchange.state_range))
 
+                    # Update the global networks
+                    print("Updating parameters")
+                    self.update(sess)
+
                     if self.T_max is not None and next(self.T) >= self.T_max:
                         tf.logging.info("Reached global step {}. Stopping.".format(self.T))
                         print("Reached global step {}. Stopping.".format(self.T))
                         coord.request_stop()
 
                         return
-
-                    # Update the global networks
-                    print("Updating parameters")
-                    self.update(sess)
 
             except tf.errors.CancelledError:
                 return
@@ -162,21 +175,14 @@ class Worker(Thread):
         self.update_values(sess)
 
     def update_policy(self, sess):
-        policy_train_op = self.model.update_policy()
-        policy_loss_summary = tf.summary.scalar('policy_loss', self.model.policy_loss)
         sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
-        _, loss = sess.run([policy_train_op, policy_loss_summary], feed_dict={self.model.inputs_ph: self.input_tensor, self.model.gru_state_ph: self.initial_gru_state,
+        _, loss = sess.run([self.policy_train_op, self.policy_loss_summary], feed_dict={self.model.inputs_ph: self.input_tensor, self.model.gru_state_ph: self.initial_gru_state,
                                                                   self.model.policy_advantage: self.policy_advantage, self.model.chosen_actions: self.chosen_actions})
-        self.summary_writer.graph = self.model.graph
         self.summary_writer.add_summary(loss)
 
 
     def update_values(self, sess):
-        value_train_op = self.model.update_value()
-        value_loss_summary = tf.summary.scalar('value_loss', self.model.value_loss)
         sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
-        _, loss = sess.run([value_train_op, value_loss_summary], feed_dict={self.model.inputs_ph: self.input_tensor, self.model.gru_state_ph: self.initial_gru_state,
+        _, loss = sess.run([self.value_train_op, self.value_loss_summary], feed_dict={self.model.inputs_ph: self.input_tensor, self.model.gru_state_ph: self.initial_gru_state,
                                                                   self.model.discounted_rewards: self.discounted_rewards})
-        self.summary_writer.graph = self.model.graph
         self.summary_writer.add_summary(loss)
-
