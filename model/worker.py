@@ -7,7 +7,7 @@ from model.model import Model
 # Normalize data somehow -- perhaps at the game level
 # E.g. take all the steps needed to prime, all the steps post and normalize
 # OR just train on percent changes between states -- maybe multiply by 1000 or something
-GAME_LENGTH = 1000
+GAME_LENGTH = 100
 CASH = 10000
 BTC = 0
 DATA = r"./data/BTC-USD_SHORT.npy"
@@ -18,14 +18,17 @@ DATA = r"./data/BTC_USD_100_FREQ.npy"
 # Make some toy data
 
 class Worker(Thread):
-    def __init__(self, global_model, T, T_max, t_max=10, deep_model = True, states_to_prime = 1000, summary_writer=None):
+    def __init__(self, global_model, T, T_max, t_max=1000, states_to_prime = 1000, summary_writer=None):
         self.t = tf.Variable(initial_value=1, trainable=False)
         self.T = T
         self.T_max = T_max
         self.t_max = t_max
         self.global_model = global_model
-        self.deep_model = deep_model
-        self.naive = not deep_model
+
+        # Redundant
+        self.deep_model = not global_model.naive
+        self.naive = global_model.naive
+
         self.states_to_prime = states_to_prime
         #self.model = Model(**global_model.get_params()) # build model based on global model params
 
@@ -64,7 +67,7 @@ class Worker(Thread):
         self.exchange.goto_state(starting_state)
         chosen_actions = []
         rewards = []
-
+        self.initial_gru_state = None
         # Prime e.g. LSTM
         if not self.deep_model:
             input_tensor = self.exchange.get_model_input_naive() # BATCH X SEQ X (Price, Side)
@@ -73,7 +76,6 @@ class Worker(Thread):
             input_tensor = self.exchange.get_model_input(price_range=[starting_state - self.states_to_prime, starting_state], exogenous=True)
             self.initial_gru_state = self.prime_gru(sess, input_tensor)[1][0]
             input_tensor = self.exchange.get_model_input(price_range=[starting_state, starting_state + turns], exogenous=True)  # GAME LENGTH X INPUT SIZE
-
 
         # We could do the full GRU training in one shot if the input doesn't depend on our actions
         # When we calculate gradients, we can similarly do it in one batch
@@ -90,6 +92,7 @@ class Worker(Thread):
             if sd < 0:
                 sd = -sd
             chosen_action = self.exchange.interpret_action(mean, sd)
+
             current_value = self.exchange.get_value()
             R = current_value - previous_value
 
@@ -104,7 +107,7 @@ class Worker(Thread):
         # self.input_tensor, self.actions, self.states, self.values, self.chosen_actions, self.rewards
 
 
-    def run(self, sess, coord, t_max):
+    def run(self, sess, coord):
         with sess.as_default(), sess.graph.as_default():
             #  Initial state
             # self.state = atari_helpers.atari_make_initial_state(self.sp.process(self.env.reset()))
@@ -122,8 +125,8 @@ class Worker(Thread):
                     # Pre choose starting states without replacement:
                     # state_range = [int(x/exchange.game_length) for x in self.exchange.state_range]
                     # (np.random.choice(state_range[1]-state_range[0] , state_range[1]-state_range[0] , replace=False) + state_range[0] ) * exchange.game_length
-                    print("Playing game for {} turns".format(t_max))
-                    self.play_game2(sess, turns=t_max, starting_state=np.random.randint(*self.exchange.state_range))
+                    print("Playing game for {} turns".format(self.t_max))
+                    self.play_game2(sess, turns=self.t_max, starting_state=np.random.randint(*self.exchange.state_range))
 
                     if self.T_max is not None and next(self.T) >= self.T_max:
                         tf.logging.info("Reached global step {}. Stopping.".format(self.T))
@@ -165,18 +168,18 @@ class Worker(Thread):
         policy_train_op = self.model.update_policy()
         policy_loss_summary = tf.summary.scalar('policy_loss', self.model.policy_loss)
         sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
-        _, loss = sess.run([policy_train_op, policy_loss_summary], feed_dict={self.model.inputs_ph: self.input_tensor, self.model.gru_state_ph: self.initial_gru_state,
+        _, loss, policy_loss = sess.run([policy_train_op, policy_loss_summary, self.model.policy_loss_summary], feed_dict={self.model.inputs_ph: self.input_tensor, self.model.gru_state_ph: self.initial_gru_state,
                                                                   self.model.policy_advantage: self.policy_advantage, self.model.chosen_actions: self.chosen_actions})
         self.summary_writer.graph = self.model.graph
         self.summary_writer.add_summary(loss)
-
+        print("Policy loss: {}".format(policy_loss))
 
     def update_values(self, sess):
         value_train_op = self.model.update_value()
         value_loss_summary = tf.summary.scalar('value_loss', self.model.value_loss)
         sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
-        _, loss = sess.run([value_train_op, value_loss_summary], feed_dict={self.model.inputs_ph: self.input_tensor, self.model.gru_state_ph: self.initial_gru_state,
+        _, loss, value_loss = sess.run([value_train_op, value_loss_summary, self.model.policy_loss_summary], feed_dict={self.model.inputs_ph: self.input_tensor, self.model.gru_state_ph: self.initial_gru_state,
                                                                   self.model.discounted_rewards: self.discounted_rewards})
         self.summary_writer.graph = self.model.graph
         self.summary_writer.add_summary(loss)
-
+        print("Values loss: {}".format(value_loss))

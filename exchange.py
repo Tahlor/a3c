@@ -217,8 +217,6 @@ class Exchange:
         prices = self.get_price_history(freq=self.naive_sample_pattern, batch= True, )[None,...]
         buy_sell_indices = self.get_batch_price_indices(state_range = None, freq=self.naive_sample_pattern, ) [:,:-1] # n-1 in prices since using the difference
         buy_sell = self.data[:]["side"][buy_sell_indices] [None,...] # add a batch dimension
-        print(prices.shape)
-        print(buy_sell.shape)
         return np.concatenate((prices,buy_sell), 2) #[1 (batches x seq length x prev_states * 2)] ; 2 is for prices and sides
 
     # same as above, but can optionally define a list [0,10,50,100] of previous time steps, or a function

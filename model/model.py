@@ -4,6 +4,7 @@ from tensorflow.contrib.rnn import GRUCell
 import tensorflow.contrib.legacy_seq2seq as seq2seq
 import math
 import sys
+import numpy as np
 sys.path.append("..")
 # import model.value
 # import model.policy
@@ -33,6 +34,11 @@ def fc_list(inputs, num_nodes, name='0', activation=tf.nn.relu):
 
     return tf.concat(outputs, axis=1)
 
+def fc_list2(inputs, num_nodes, batch_size, name='1', activation=tf.nn.relu):
+    # batch_size = self.batch_size * self.seq_length
+    temp_inputs = tf.reshape(inputs, [batch_size, -1])
+    output_list = tf.contrib.layers.fully_connected(temp_inputs, num_nodes)
+    return output_list
 
 def get_gru(num_layers, state_dim, reuse=False):
     with tf.variable_scope('gru', reuse=reuse):
@@ -63,7 +69,7 @@ class Model:
         self.entropy_weight = 1e-4
         self.naive = naive
         self.build_network()
-
+        self.network_output = None
 
     def get_params(self):
         return {"input_size":self.input_size, "layer_size":self.layer_size, "trainable": self.trainable, "discount":self.discount}
@@ -80,8 +86,20 @@ class Model:
             inputs = tf.split(self.inputs_ph, self.seq_length, axis=1)
 
             if self.naive:
-                output_list = fc_list(self.inputs_ph, self.layer_size)
+                #self.inputs_ph 1 X SEQ X (eg. 10 input prices/sides)
+                #output_list = fc_list(self.inputs_ph, self.layer_size)
+                temp_inputs = tf.reshape(self.inputs_ph, [self.batch_size * self.seq_length,-1])
+                output_list = tf.contrib.layers.fully_connected(temp_inputs, self.layer_size) # this is just a 256 node network instead of GRU
 
+                # Put it back into batch space
+                output_list = tf.reshape(output_list, [self.batch_size, self.seq_length, -1] )
+                #output_list = tf.unstack(output_list) # needs to be a list???
+
+                #inputs, num_nodes, batch_size
+                actions_raw = fc_list2(inputs = output_list, num_nodes = self.number_of_actions * 2, batch_size = self.batch_size * self.seq_length, name='action', activation=tf.nn.tanh)
+                self.value_op = fc_list2(inputs=output_list, num_nodes=1,
+                                       batch_size=self.batch_size * self.seq_length, name='action',
+                                       activation=None)
             else:
                 gru_cells = get_gru(self.num_layers, self.layer_size)
                 self.multi_cell = tf.nn.rnn_cell.MultiRNNCell(gru_cells)
@@ -96,35 +114,18 @@ class Model:
                     output_list = self.network_output[0]
                     final_state = self.network_output[1]
 
-            # Approach for a discrete action space, where we can either
-            # buy or sell but don't specify an amount
-            # logits = fc(output, 2, name='logits')
-            # actions = tf.nn.softmax(logits)
 
-            # Approach for a continuous space.
-            # 'Action' is a real number in [-1,1], where
-            # -1 means 'sell everything you have',
-            # 0 means 'do nothing', and
-            # 1 means 'buy everything you can'.
-            # Exchange should know how to interpret this number.
+                # Actions distribution: [batch_size x seq_length x number_of_actions x 2]
+                # i.e. one mu and one standard deviation for each action at each step of each sequence
+                actions_raw = fc_list(output_list, self.number_of_actions * 2, name='action', activation=None)
+                self.value_op = fc_list(output_list, 1, name='value', activation=None)
 
-            # Actions distribution: [batch_size x seq_length x number_of_actions x 2]
-            # i.e. one mu and one standard deviation for each action at each step of each sequence
-            actions_raw = fc_list(output_list, self.number_of_actions * 2, name='action', activation=None)
             self.actions_op = tf.reshape(actions_raw, [self.batch_size, self.seq_length, self.number_of_actions, 2])
             self.action_mu = tf.nn.tanh(self.actions_op[:, :, :, 0])
             self.action_sd = tf.nn.softplus(self.actions_op[:, :, :, 1])
 
             # Value: [batch_size x seq_length]
             # i.e. one value per step in the sequence, for all sequences
-            self.value_op = fc_list(output_list, 1, name='value', activation=None)
-
-            # self.loss_op = tf.reduce_sum(self.targets_ph - self.actions_op, axis=1)
-            # self.optimizer = tf.train.RMSPropOptimizer(0.01).minimize(self.loss_op)
-
-            #with tf.Session(graph=self.graph) as sess:
-            #    sess.run(tf.global_variables_initializer())
-
             self.saver = tf.train.Saver()
 
 
@@ -163,6 +164,7 @@ class Model:
         self.policy_grads_and_vars = self.optimizer.compute_gradients(self.policy_loss)
         self.policy_grads_and_vars = [[grad, var] for grad, var in self.policy_grads_and_vars if grad is not None]
         self.policy_train_op = self.optimizer.apply_gradients(self.policy_grads_and_vars, global_step=tf.train.get_global_step())
+        self.policy_loss_summary = tf.summary.scalar('policy_loss_summary', self.policy_loss)
         return self.policy_train_op
 
     def update_value(self):
@@ -176,6 +178,8 @@ class Model:
         self.value_grads_and_vars = self.optimizer.compute_gradients(self.value_loss)
         self.value_grads_and_vars = [[grad, var] for grad, var in self.value_grads_and_vars if grad is not None]
         self.value_train_op = self.optimizer.apply_gradients(self.value_grads_and_vars, global_step=tf.train.get_global_step())
+        self.value_loss_summary = tf.summary.scalar('value_loss_summary', self.value_loss)
+        self.merged = tf.summary.merge([self.value_loss_summary, self.policy_loss_summary])
         return self.value_train_op
 
 
