@@ -26,16 +26,18 @@ BTC = 0
 DATA = r"./data/BTC-USD_SHORT.npy"
 NAIVE_M0DEL = False
 GAME_MAX_LENGTH = 1000
+EPOCHS = 2
 
 if os.environ["COMPUTERNAME"] == 'DALAILAMA':
     DATA = ".\data\BTC_USD_100_FREQ.npy"
     NAIVE_M0DEL = True
-    GAME_MAX_LENGTH = 100
+    GAME_MAX_LENGTH = 1000
+    EPOCHS = 100
 
 tf.flags.DEFINE_string("model_dir", "../tmp/", "Directory to write Tensorboard summaries and videos to.")
 tf.flags.DEFINE_string("env", "exchange_v1.0", "Name of game")
 tf.flags.DEFINE_integer("t_max", GAME_MAX_LENGTH, "Number of steps before performing an update")
-tf.flags.DEFINE_integer("max_global_steps", 6, "Stop training after this many steps in the environment. Defaults to running indefinitely.")
+tf.flags.DEFINE_integer("max_global_steps", EPOCHS, "Stop training after this many steps in the environment. Defaults to running indefinitely.")
 tf.flags.DEFINE_integer("eval_every", 300, "Evaluate the policy every N seconds")
 tf.flags.DEFINE_boolean("reset", False, "If set, delete the existing model directory and start training from scratch.")
 tf.flags.DEFINE_integer("parallelism", None, "Number of threads to run. If not set we run [num_cpu_cores] threads.")

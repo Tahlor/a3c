@@ -31,7 +31,7 @@ DATA = ".\data\BTC_USD_100_FREQ.npy"
 # time_interval - each state is a X second period
 
 class Exchange:
-    def __init__(self, data_stream, cash = 10000, holdings = 0, actions = [-1,1], time_interval = None, transaction_cost = 0, game_length = None):
+    def __init__(self, data_stream, game_length, cash = 10000, holdings = 0, actions = [-1,1], time_interval = None, transaction_cost = 0, permit_short = False):
 
         '''
         Expects a list of dictionaries with the key price
@@ -48,7 +48,7 @@ class Exchange:
         # will be the len of the number of input prices, we'll add the 0 later
 
         self.data = np.load(data_stream)
-        self.vanilla_prices = self.data[:]["price"]
+        self.vanilla_prices = self.data[:]["price"].astype('float64')
         self.log_prices = np.log(np.copy(self.data[:]["price"].astype("float64")))
         self.log_price_changes = self.log_prices[1:] - self.log_prices[0:-1]
         self.gru_prime_length = self.game_length
@@ -57,7 +57,7 @@ class Exchange:
         max_state = len(self.log_prices) - self.game_length -  10 # give us a small buffer
         self.state_range = [min_state, max_state]
         self.state = min_state
-
+        self.current_price = self.vanilla_prices[self.state]
 
         self.starting_cash = cash
         self.cash = cash
@@ -66,11 +66,17 @@ class Exchange:
         self.transaction_cost = transaction_cost
         self.price_changes = self.generate_log_prices(1, [0,len(self.data)]) # these are the price changes for the entire exchange
         self.price_change = self.price_changes[0]
-        self.permit_short = False
+        self.permit_short = permit_short
+        self.margin_call = 0
+        self.margin_requirement = 0
         if not time_interval is None:
             # print(self.data[0:30])
             self.generate_prices_at_time(time_interval)
             self.data = self.prices_at_time
+
+    def reset(self):
+        self.cash = self.starting_cash
+        self.holdings = 0
 
     def get_model_input(self, batch_size=1, price_range=None, exogenous=True):
         if price_range is None:
@@ -124,6 +130,11 @@ class Exchange:
         self.state += 1
         self.current_price = self.data[self.state]["price"]
         self.price_change = self.price_changes[self.state] # use the log price changes
+
+        # Round off
+        self.cash = round(self.cash, 5)
+        #print("CASH {}".format(self.cash))
+        self.holdings = round(self.holdings, 5)
         return self.data[self.state]
 
     def goto_state(self, state):
@@ -269,8 +280,10 @@ class Exchange:
         else:
             cost = min(self.cash, currency)
 
-        self.cash -= cost
-        self.holdings += (cost * (1-self.transaction_cost)) / self.current_price
+        # buy an even amount of coins
+        coins_bought = round((cost * (1-self.transaction_cost)) / self.current_price, 2)
+        self.cash -= coins_bought * self.current_price * (1+self.transaction_cost)
+        self.holdings += coins_bought
 
     def sell_security(self, coin = None, currency = None):
         assert (coin is None) != (currency is None)
@@ -280,8 +293,9 @@ class Exchange:
         else:
             proceeds = min(self.holdings*self.current_price, coin*self.current_price) if not self.permit_short else coin*self.current_price
 
-        self.cash += proceeds * (1-self.transaction_cost)
-        self.holdings -= proceeds/self.current_price
+        coins_sold = round(proceeds/self.current_price, 2)
+        self.cash += coins_sold * self.current_price * (1-self.transaction_cost)
+        self.holdings -= coins_sold
 
     def get_balances(self):
         return {"cash":self.cash, "holdings":self.holdings}
@@ -299,9 +313,10 @@ class Exchange:
         if continuous:
             action = 2*(action-np.average(self.actions))/(max(self.actions)-min(self.actions))
             action = self.sample_from_action(action, sd)
+        action = round(action, 2)
 
         # Margin call
-        if self.permit_short and self.get_value() < .1*self.starting_cash and self.holdings < 0:
+        if self.permit_short and self.get_value() < self.margin_call*self.starting_cash and self.holdings < 0:
             # close all negative positions if value < 1000
             self.buy_security(coin=-self.holdings)
             return action
@@ -310,15 +325,19 @@ class Exchange:
             if not self.permit_short:
                 self.sell_security(coin = self.holdings * abs(action))
             else: # if agent can short, he can short all but 20% of his initial balance
-                self.sell_security(coin=(self.get_value()   -.2*self.starting_cash)/self.current_price * abs(action))
+                self.sell_security(coin=((self.get_value() - self.margin_requirement*self.starting_cash)/self.current_price) * abs(action))
         elif action > 0:
             self.buy_security(currency = self.cash * abs(action))
+        #print(action)
+        #print(self.get_status(), action)
         return action
 
     def sample_from_action(self, mean = 0, sd = 1):
         sample = np.random.normal(mean, sd)
         return min(max(sample, -1), 1)
 
+    def get_status(self):
+        print("Cash {}, Holdings {}, Price {}, State {}".format(self.cash, self.holdings, self.current_price, self.state))
 
 def test_buying_and_selling(myExchange):
     #print(x)
@@ -342,12 +361,39 @@ def test_getting_prices(myExchange):
     # DOUBLE CHECK THIS IS RIGHT
     print(myExchange.get_model_input_naive())
 
+def play_game_simple():
+    myExchange = Exchange(DATA, 1000, permit_short=True)
+
+    #myExchange.interpret_action( 1, sd=0)
+    myExchange.interpret_action( -1, sd=0)
+    print(myExchange.cash)
+    myExchange.get_next_state()
+    myExchange.get_next_state()
+    myExchange.get_next_state()
+
+def play_game():
+    #myExchange = Exchange(DATA, 1000, permit_short=False, cash=0, holdings=10000/245.2)
+    myExchange = Exchange(DATA, 1000, permit_short=True)
+    myExchange2 = Exchange(DATA, 1000, permit_short=True)
+    for x in range(0,20):
+        myExchange.get_next_state()
+        myExchange2.get_next_state()
+        print(myExchange.get_status())
+
+        myExchange.interpret_action((-1)**(x+1), sd=0)
+        myExchange2.interpret_action((-1)**(x), sd=0)
+        print(myExchange.current_price)
+    print(myExchange.get_status())
+    print(myExchange2.get_status())
+    print(myExchange.get_value() + myExchange2.get_value())
 if __name__ == "__main__":
     np.set_printoptions(formatter={'int_kind': lambda x: "{:0>3d}".format(x)})
     np.set_printoptions(formatter={'float_kind': lambda x: "{0:6.3f}".format(x)})
 
     # myExchange = Exchange(DATA, time_interval=60)
-    myExchange = Exchange(DATA)
-    myExchange.state = 10000
-    test_getting_prices(myExchange)
+    # myExchange = Exchange(DATA)
+    # myExchange.state = 10000
+    # test_getting_prices(myExchange)
     #print(myExchange.get_price_history(n = 1, freq=1))
+
+    play_game()

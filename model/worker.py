@@ -4,6 +4,13 @@ from threading import Thread
 from exchange import Exchange
 from model.model import Model
 
+## Problems:
+# Final Value always less than initial value
+# Is it learning?
+# Are input prices correct?
+# Policy loss is -inf
+
+
 # Normalize data somehow -- perhaps at the game level
 # E.g. take all the steps needed to prime, all the steps post and normalize
 # OR just train on percent changes between states -- maybe multiply by 1000 or something
@@ -61,8 +68,7 @@ class Worker(Thread):
         return sess.run(self.model.network_output, feed_dict={self.model.inputs_ph: input_tensor, self.model.gru_state_ph:initial_state})
 
     def play_game2(self, sess, starting_state=1000):
-        if self.exchange is None:
-            self.exchange = Exchange(DATA, cash=10000, holdings=0, actions=[-1, 1], game_length=self.t_max)
+        self.exchange.reset()
         previous_value = self.exchange.cash
         self.exchange.goto_state(starting_state)
         chosen_actions = []
@@ -70,7 +76,7 @@ class Worker(Thread):
         # Prime e.g. LSTM
         if self.naive:
             input_tensor = self.exchange.get_model_input_naive() # BATCH X SEQ X (Price, Side)
-            self.initial_gru_state = np.zeros([self.model.batch_size, self.model.layer_size])
+            self.initial_gru_state = np.zeros([self.model.batch_size, self.model.layer_size]) # just feed it some 0's
 
 
         else:
@@ -79,33 +85,29 @@ class Worker(Thread):
             self.initial_gru_state = self.prime_gru(sess, input_tensor)[1][0]
             input_tensor = self.exchange.get_model_input(price_range=[starting_state, starting_state + self.t_max], exogenous=True)  # GAME LENGTH X INPUT SIZE
 
-        # We could do the full GRU training in one shot if the input doesn't depend on our actions
-        # When we calculate gradients, we can similarly do it in one batch
         self.input_tensor = input_tensor
         self.actions, self.state_sequence, self.values = self.model.get_actions_states_values(sess, input_tensor, self.initial_gru_state)  # returns GAME LENGTH X 1 X 2 [-1 to 1, sd]
-        print("Final Value: {}".format(self.exchange.cash))
         # final_state = [batch size, 256]
 
+        #print(self.actions)
         for i in range(0, self.t_max):
             # get action prediction
             action = self.actions[:, i, 0] # batch_size x 2
             mean = action[0][0]
             sd = action[0][1]
-            if sd < 0:
-                sd = -sd
+            #print(mean, sd)
             chosen_action = self.exchange.interpret_action(mean, sd)
-
+            #print(chosen_action)
             current_value = self.exchange.get_value()
             R = current_value - previous_value
-
             # Record actions
             chosen_actions.append(chosen_action)
             rewards.append(R)
             previous_value = self.exchange.get_value()
-
+            self.exchange.get_next_state()
         self.chosen_actions = np.asarray(chosen_actions).reshape([self.model.batch_size, self.t_max, self.model.number_of_actions])
         self.rewards = np.asarray(rewards)
-
+        print("Final Value: {}".format(self.exchange.get_value()))
         # self.input_tensor, self.actions, self.states, self.values, self.chosen_actions, self.rewards
 
 
@@ -133,9 +135,6 @@ class Worker(Thread):
                     # Copy Parameters from the global networks
                     #sess.run(self.copy_params_op)
                     # self.loadNetworkFromSnapshot()
-
-                    # Collect some experience
-                    #transitions, local_t, global_t = self.play_game(t_max, sess)
 
                     # Pre choose starting states without replacement:
                     # state_range = [int(x/exchange.game_length) for x in self.exchange.state_range]
@@ -181,7 +180,7 @@ class Worker(Thread):
 
     def update_policy(self, sess):
         sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
-        _, loss, policy_loss = sess.run([self.policy_train_op, self.policy_loss_summary, self.model.policy_loss_summary], feed_dict={self.model.inputs_ph: self.input_tensor, self.model.gru_state_ph: self.initial_gru_state,
+        _, loss, policy_loss = sess.run([self.policy_train_op, self.policy_loss_summary, self.model.policy_loss], feed_dict={self.model.inputs_ph: self.input_tensor, self.model.gru_state_ph: self.initial_gru_state,
             self.model.policy_advantage: self.policy_advantage, self.model.chosen_actions: self.chosen_actions})
         #_, loss = sess.run([self.policy_train_op, self.policy_loss_summary], feed_dict={self.model.inputs_ph: self.input_tensor, self.model.gru_state_ph: self.initial_gru_state,
             #self.model.policy_advantage: self.policy_advantage, self.model.chosen_actions: self.chosen_actions})
@@ -190,7 +189,7 @@ class Worker(Thread):
 
     def update_values(self, sess):
         sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
-        _, loss, value_loss = sess.run([self.value_train_op, self.value_loss_summary, self.model.value_loss_summary],
+        _, loss, value_loss = sess.run([self.value_train_op, self.value_loss_summary, self.model.value_loss],
                                        feed_dict={self.model.inputs_ph: self.input_tensor, self.model.gru_state_ph: self.initial_gru_state,self.model.discounted_rewards: self.discounted_rewards})
         #_, loss = sess.run([self.value_train_op, self.value_loss_summary],
                                         # feed_dict={self.model.inputs_ph: self.input_tensor, self.model.gru_state_ph: self.initial_gru_state,self.model.discounted_rewards: self.discounted_rewards})

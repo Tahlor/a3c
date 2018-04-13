@@ -34,6 +34,7 @@ def fc_list(inputs, num_nodes, name='0', activation=tf.nn.relu):
 
     return tf.concat(outputs, axis=1)
 
+# This just converts down multiple batch samples -- e.g. a 5 batch, 1000 sequence game = [5000 batches X layer input size]
 def fc_list2(inputs, num_nodes, batch_size, name='1', activation=tf.nn.relu):
     # batch_size = self.batch_size * self.seq_length
     temp_inputs = tf.reshape(inputs, [batch_size, -1])
@@ -107,7 +108,7 @@ class Model:
                                        batch_size=self.batch_size * self.seq_length, name='action',
                                        activation=None) # this is (SEQ LEN * BATCH) X 1
                 self.value_op = tf.reshape(self.value_op,[self.batch_size, self.seq_length]) # model expects SEQ * 1
-                print(self.value_op.shape)
+                #print(self.value_op.shape)
             else:
                 gru_cells = get_gru(self.num_layers, self.layer_size)
                 self.multi_cell = tf.nn.rnn_cell.MultiRNNCell(gru_cells)
