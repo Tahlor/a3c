@@ -25,19 +25,23 @@ CASH = 10000
 BTC = 0
 DATA = r"./data/BTC-USD_SHORT.npy"
 NAIVE_M0DEL = False
+GAME_MAX_LENGTH = 1000
 
 if os.environ["COMPUTERNAME"] == 'DALAILAMA':
     DATA = ".\data\BTC_USD_100_FREQ.npy"
     NAIVE_M0DEL = True
+    GAME_MAX_LENGTH = 100
 
 tf.flags.DEFINE_string("model_dir", "../tmp/", "Directory to write Tensorboard summaries and videos to.")
 tf.flags.DEFINE_string("env", "exchange_v1.0", "Name of game")
-tf.flags.DEFINE_integer("t_max", 1000, "Number of steps before performing an update")
+tf.flags.DEFINE_integer("t_max", GAME_MAX_LENGTH, "Number of steps before performing an update")
 tf.flags.DEFINE_integer("max_global_steps", 6, "Stop training after this many steps in the environment. Defaults to running indefinitely.")
 tf.flags.DEFINE_integer("eval_every", 300, "Evaluate the policy every N seconds")
 tf.flags.DEFINE_boolean("reset", False, "If set, delete the existing model directory and start training from scratch.")
 tf.flags.DEFINE_integer("parallelism", None, "Number of threads to run. If not set we run [num_cpu_cores] threads.")
 tf.flags.DEFINE_boolean("naive", NAIVE_M0DEL, "Use naive MLP.")
+tf.flags.DEFINE_integer("naive_lookback", 10, "Number of back prices to look at.")
+tf.flags.DEFINE_integer("num_input_types", 2, "E.g. prices, side, timestampe etc.")
 FLAGS = tf.flags.FLAGS
 
 
@@ -61,8 +65,7 @@ summary_writer = tf.summary.FileWriter(os.path.join(MODEL_DIR, "train"))
 # saver = tf.train.Saver(keep_checkpoint_every_n_hours=0.5, max_to_keep=3)
 
 # Initialize model (value and policy nets)
-m = Model(seq_length=FLAGS.t_max, naive=FLAGS.naive)
-exchange = Exchange(DATA)
+m = Model(seq_length=FLAGS.t_max, naive=FLAGS.naive, inputs_per_time_step=(FLAGS.naive_lookback * FLAGS.num_input_types if FLAGS.naive else FLAGS.num_input_types))
 
 # Keep track of steps
 global_step = tf.Variable(0, name="global_step", trainable=False)

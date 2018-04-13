@@ -52,7 +52,10 @@ class Model:
     def __init__(self, batch_size=1, inputs_per_time_step=2, seq_length=1000, num_layers=1, layer_size=256, trainable = True, discount = .9, naive=False):
         self.seq_length = seq_length
         self.batch_size = batch_size
-        self.input_size = inputs_per_time_step * seq_length
+        if not naive:
+            self.input_size = inputs_per_time_step * seq_length
+        else:
+            self.input_size = inputs_per_time_step
         self.num_layers = num_layers
         self.layer_size = layer_size
         self.number_of_actions = 1
@@ -76,7 +79,10 @@ class Model:
 
     def build_network(self):
         with self.graph.as_default():
-            self.inputs_ph = tf.placeholder(tf.float32, shape=[self.batch_size, self.input_size], name='inputs')
+            if self.naive:
+                self.inputs_ph = tf.placeholder(tf.float32, shape=[self.batch_size, self.seq_length, self.input_size], name='inputs')
+            else:
+                self.inputs_ph = tf.placeholder(tf.float32, shape=[self.batch_size, self.input_size], name='inputs')
             self.targets_ph = tf.placeholder(tf.float32, shape=[self.batch_size, self.input_size], name='targets')
             self.gru_state_ph = tf.placeholder(tf.float32, shape=[self.batch_size, self.layer_size], name='gru_state')
             self.policy_advantage = tf.placeholder(tf.float32, shape=[self.batch_size, self.seq_length], name='advantages')
@@ -99,7 +105,9 @@ class Model:
                 actions_raw = fc_list2(inputs = output_list, num_nodes = self.number_of_actions * 2, batch_size = self.batch_size * self.seq_length, name='action', activation=tf.nn.tanh)
                 self.value_op = fc_list2(inputs=output_list, num_nodes=1,
                                        batch_size=self.batch_size * self.seq_length, name='action',
-                                       activation=None)
+                                       activation=None) # this is (SEQ LEN * BATCH) X 1
+                self.value_op = tf.reshape(self.value_op,[self.batch_size, self.seq_length]) # model expects SEQ * 1
+                print(self.value_op.shape)
             else:
                 gru_cells = get_gru(self.num_layers, self.layer_size)
                 self.multi_cell = tf.nn.rnn_cell.MultiRNNCell(gru_cells)
@@ -118,14 +126,15 @@ class Model:
                 # Actions distribution: [batch_size x seq_length x number_of_actions x 2]
                 # i.e. one mu and one standard deviation for each action at each step of each sequence
                 actions_raw = fc_list(output_list, self.number_of_actions * 2, name='action', activation=None)
+
+                # Value: [batch_size x seq_length]
+                # i.e. one value per step in the sequence, for all sequences
                 self.value_op = fc_list(output_list, 1, name='value', activation=None)
 
             self.actions_op = tf.reshape(actions_raw, [self.batch_size, self.seq_length, self.number_of_actions, 2])
             self.action_mu = tf.nn.tanh(self.actions_op[:, :, :, 0])
             self.action_sd = tf.nn.softplus(self.actions_op[:, :, :, 1])
 
-            # Value: [batch_size x seq_length]
-            # i.e. one value per step in the sequence, for all sequences
             self.saver = tf.train.Saver()
 
 
@@ -179,14 +188,18 @@ class Model:
         self.value_grads_and_vars = [[grad, var] for grad, var in self.value_grads_and_vars if grad is not None]
         self.value_train_op = self.optimizer.apply_gradients(self.value_grads_and_vars, global_step=tf.train.get_global_step())
         self.value_loss_summary = tf.summary.scalar('value_loss_summary', self.value_loss)
-        self.merged = tf.summary.merge([self.value_loss_summary, self.policy_loss_summary])
+        #self.merged = tf.summary.merge([self.value_loss_summary, self.policy_loss_summary])
         return self.value_train_op
 
 
     # tf.contrib.distributions.Normal(1.,1.).log_prob()
 
     def get_actions_states_values(self, sess, input_tensor, gru_state):
-        actions, states, values = sess.run([self.actions_op, self.network_output, self.value_op], feed_dict={self.inputs_ph: input_tensor, self.gru_state_ph: gru_state})
+        states = [[]]
+        if self.naive:
+            actions, values = sess.run([self.actions_op, self.value_op], feed_dict={self.inputs_ph: input_tensor})
+        else:
+            actions, states, values = sess.run([self.actions_op, self.network_output, self.value_op], feed_dict={self.inputs_ph: input_tensor, self.gru_state_ph: gru_state})
         return actions, tuple(states[0]), values
 
     def get_state(self):

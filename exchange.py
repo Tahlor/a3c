@@ -31,7 +31,7 @@ DATA = ".\data\BTC_USD_100_FREQ.npy"
 # time_interval - each state is a X second period
 
 class Exchange:
-    def __init__(self, data_stream, cash = 10000, holdings = 0, actions = [-1,1], time_interval = None, transaction_cost = 0):
+    def __init__(self, data_stream, cash = 10000, holdings = 0, actions = [-1,1], time_interval = None, transaction_cost = 0, game_length = None):
 
         '''
         Expects a list of dictionaries with the key price
@@ -43,7 +43,7 @@ class Exchange:
         # Game parameters
         self.number_of_input_prices_for_basic = 10
         self.number_of_inputs_for_basic = self.number_of_input_prices_for_basic # *2 # for prices and positions
-        self.game_length = 1000
+        self.game_length = game_length
         self.naive_sample_pattern = [2**x for x in range(2,2+self.number_of_input_prices_for_basic)] # for naive model, which previous prices to look at;
         # will be the len of the number of input prices, we'll add the 0 later
 

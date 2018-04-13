@@ -37,7 +37,7 @@ class Worker(Thread):
         self.summary_writer = summary_writer
 
         # Each worker has an exchange; can be reset to any state
-        self.exchange = Exchange(DATA, time_interval=60)
+        self.exchange = Exchange(DATA, time_interval=60, game_length=self.t_max)
 
 
         # create thread-specific copy of global parameters
@@ -60,31 +60,33 @@ class Worker(Thread):
         initial_state = np.zeros([self.model.batch_size, self.model.layer_size])
         return sess.run(self.model.network_output, feed_dict={self.model.inputs_ph: input_tensor, self.model.gru_state_ph:initial_state})
 
-    def play_game2(self, sess, turns=GAME_LENGTH, starting_state=1000):
+    def play_game2(self, sess, starting_state=1000):
         if self.exchange is None:
-            self.exchange = Exchange(DATA, cash=10000, holdings=0, actions=[-1, 1])
+            self.exchange = Exchange(DATA, cash=10000, holdings=0, actions=[-1, 1], game_length=self.t_max)
         previous_value = self.exchange.cash
         self.exchange.goto_state(starting_state)
         chosen_actions = []
         rewards = []
-        self.initial_gru_state = None
         # Prime e.g. LSTM
-        if not self.deep_model:
+        if self.naive:
             input_tensor = self.exchange.get_model_input_naive() # BATCH X SEQ X (Price, Side)
+            self.initial_gru_state = np.zeros([self.model.batch_size, self.model.layer_size])
+
+
         else:
             # Prime GRU
             input_tensor = self.exchange.get_model_input(price_range=[starting_state - self.states_to_prime, starting_state], exogenous=True)
             self.initial_gru_state = self.prime_gru(sess, input_tensor)[1][0]
-            input_tensor = self.exchange.get_model_input(price_range=[starting_state, starting_state + turns], exogenous=True)  # GAME LENGTH X INPUT SIZE
+            input_tensor = self.exchange.get_model_input(price_range=[starting_state, starting_state + self.t_max], exogenous=True)  # GAME LENGTH X INPUT SIZE
 
         # We could do the full GRU training in one shot if the input doesn't depend on our actions
         # When we calculate gradients, we can similarly do it in one batch
         self.input_tensor = input_tensor
         self.actions, self.state_sequence, self.values = self.model.get_actions_states_values(sess, input_tensor, self.initial_gru_state)  # returns GAME LENGTH X 1 X 2 [-1 to 1, sd]
-
+        print("Final Value: {}".format(self.exchange.cash))
         # final_state = [batch size, 256]
 
-        for i in range(0, turns):
+        for i in range(0, self.t_max):
             # get action prediction
             action = self.actions[:, i, 0] # batch_size x 2
             mean = action[0][0]
@@ -101,7 +103,7 @@ class Worker(Thread):
             rewards.append(R)
             previous_value = self.exchange.get_value()
 
-        self.chosen_actions = np.asarray(chosen_actions).reshape([self.model.batch_size, GAME_LENGTH, self.model.number_of_actions])
+        self.chosen_actions = np.asarray(chosen_actions).reshape([self.model.batch_size, self.t_max, self.model.number_of_actions])
         self.rewards = np.asarray(rewards)
 
         # self.input_tensor, self.actions, self.states, self.values, self.chosen_actions, self.rewards
@@ -139,7 +141,7 @@ class Worker(Thread):
                     # state_range = [int(x/exchange.game_length) for x in self.exchange.state_range]
                     # (np.random.choice(state_range[1]-state_range[0] , state_range[1]-state_range[0] , replace=False) + state_range[0] ) * exchange.game_length
                     print("Playing game for {} turns".format(self.t_max))
-                    self.play_game2(sess, turns=self.t_max, starting_state=np.random.randint(*self.exchange.state_range))
+                    self.play_game2(sess, starting_state=np.random.randint(*self.exchange.state_range))
 
                     # Update the global networks
                     print("Updating parameters")
@@ -188,7 +190,7 @@ class Worker(Thread):
 
     def update_values(self, sess):
         sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
-        _, loss, value_loss = sess.run([self.value_train_op, self.value_loss_summary, self.model.policy_loss_summary],
+        _, loss, value_loss = sess.run([self.value_train_op, self.value_loss_summary, self.model.value_loss_summary],
                                        feed_dict={self.model.inputs_ph: self.input_tensor, self.model.gru_state_ph: self.initial_gru_state,self.model.discounted_rewards: self.discounted_rewards})
         #_, loss = sess.run([self.value_train_op, self.value_loss_summary],
                                         # feed_dict={self.model.inputs_ph: self.input_tensor, self.model.gru_state_ph: self.initial_gru_state,self.model.discounted_rewards: self.discounted_rewards})
