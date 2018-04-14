@@ -131,7 +131,6 @@ class Worker(Thread):
             self.value_train_op = self.model.update_value()
             self.value_loss_summary = tf.summary.scalar('value_loss', self.model.value_loss)
 
-
             self.summary_writer.graph = self.model.graph
 
             # Initialize model
@@ -162,7 +161,7 @@ class Worker(Thread):
                     self.update(sess)
 
                     if int(count_string) % 100 == 0:
-                        print("Finisehd step #{}, net worth {}, value loss {}, policy loss {}".format(int(count_string), self.exchange.get_value(), self.value_loss, self.policy_loss))
+                        print("Finished step #{}, net worth {}, value loss {}, policy loss {}".format(int(count_string), self.exchange.get_value(), self.value_loss, self.policy_loss))
                         #print("Actions {}".format(self.chosen_actions))
                         #print("Action Mus {}".format(self.policy_loss_dict["actions"]))
                         #print("Network out {}".format(self.policy_loss_dict["output_list"][0,0:10]))

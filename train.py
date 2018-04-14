@@ -24,10 +24,10 @@ from exchange import Exchange
 # Game parameters
 CASH = 10000
 BTC = 0
-DATA = r"./data/BTC-USD_SHORT.npy"
+DATA = r"./data/BTC_USD_100_FREQ.npy"
 NAIVE_M0DEL = False
 GAME_MAX_LENGTH = 1000
-EPOCHS = 2
+EPOCHS = 1000
 MODEL_DIR = "../tmp/"
 TAYLOR = False
 

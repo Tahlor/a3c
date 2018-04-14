@@ -307,13 +307,12 @@ class Exchange:
     # maybe feed absolute price and price % change from previous state
     def get_perc_change(self):
         return self.current_price/self.data[self.state-1]["price"]
-        
 
     def interpret_action(self, action, sd, continuous = True):
         # this normalizes action to [min, max]
         if continuous:
             action = 2*(action-np.average(self.actions))/(max(self.actions)-min(self.actions))
-            action = self.sample_from_action(action, sd)
+            action = self.sample_from_action(action, abs(sd))
         action = round(action, 2)
 
         # Margin call
