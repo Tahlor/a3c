@@ -71,10 +71,11 @@ class Worker(Thread):
 
     def play_game2(self, sess, starting_state=1000):
         self.exchange.reset()
-        previous_value = self.exchange.cash
+        previous_value = self.exchange.get_value()
         self.exchange.goto_state(starting_state)
         chosen_actions = []
         rewards = []
+        self.portfolio_values = []
         # Prime e.g. LSTM
 
         if self.naive:
@@ -108,6 +109,7 @@ class Worker(Thread):
             chosen_action = self.exchange.interpret_action(mean, sd)
             #print(chosen_action)
             current_value = self.exchange.get_value()
+            self.portfolio_values.append(current_value)
             R = current_value - previous_value
             # Record actions
             chosen_actions.append(chosen_action)
@@ -140,7 +142,7 @@ class Worker(Thread):
             sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
 
             # Add graph
-            self.summary_writer.add_graph(self.summary_writer.graph)
+            # self.summary_writer.add_graph(self.summary_writer.graph)
 
             try:
                 while not coord.should_stop():
@@ -162,7 +164,7 @@ class Worker(Thread):
                     starting_state = np.random.randint(*self.exchange.state_range)
                     self.play_game2(sess, starting_state=10)
 
-                    # Update the global networks
+                    # Update the global ne  tworks
                     #print("Updating parameters")
                     self.global_step = int(count_string)
                     self.update(sess)
@@ -200,8 +202,11 @@ class Worker(Thread):
 
         rewards_swapped = np.transpose(self.rewards[::-1], [1,0]) # swap batch and seq axes, so SEX X BATCH; also reverse
         values_swapped = np.transpose(self.values[::-1], [1, 0])
-        R = values_swapped[0] # get value in last state
 
+        # Copmletely ignore the stupid value net
+        values_swapped = np.zeros((values_swapped.shape))
+        R = values_swapped[0] # get value in last state
+        R = 0
         for n, r in enumerate(rewards_swapped):
             R = r + self.model.discount*R
             discounted_rewards.append(R)
@@ -211,12 +216,27 @@ class Worker(Thread):
         self.discounted_rewards = np.asarray(discounted_rewards[::-1]).transpose([1,0])
         self.policy_advantage = np.asarray(policy_advantage[::-1]).transpose([1,0])
 
+        if self.global_step % 1000==0:
+            #sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
+            pass
+
+        if self.global_step % 100 == 0 and False:
+            print(self.portfolio_values)
+            print(self.rewards)
+            print(self.discounted_rewards)
+            import time
+            time.sleep(2)
+            #Stop
         self.update_policy(sess)
-        self.update_values(sess)
+
+        if False:
+            self.update_values(sess)
+        else:
+            self.value_loss = "N/A"
 
     def update_policy(self, sess):
         # self.policy_dict, self.model.policy_loss
-        _, loss, self.policy_loss_dict = sess.run([self.policy_train_op, self.policy_loss_summary, self.model.policy_dict], feed_dict={self.model.inputs_ph: self.input_tensor, self.model.gru_state_ph: self.initial_gru_state,
+        _, loss, self.policy_loss_dict, _ = sess.run([self.policy_train_op, self.policy_loss_summary, self.model.policy_dict, self.model.assert_op], feed_dict={self.model.inputs_ph: self.input_tensor, self.model.gru_state_ph: self.initial_gru_state,
             self.model.policy_advantage: self.policy_advantage, self.model.chosen_actions: self.chosen_actions})
         #_, loss = sess.run([self.policy_train_op, self.policy_loss_summary], feed_dict={self.model.inputs_ph: self.input_tensor, self.model.gru_state_ph: self.initial_gru_state,
             #self.model.policy_advantage: self.policy_advantage, self.model.chosen_actions: self.chosen_actions})

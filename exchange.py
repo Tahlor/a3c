@@ -304,6 +304,9 @@ class Exchange:
     def get_value(self):
         return self.cash + self.holdings*self.current_price
 
+    def get_perc_cash(self):
+        return self.cash/self.get_value()
+
     # maybe feed absolute price and price % change from previous state
     def get_perc_change(self):
         return self.current_price/self.data[self.state-1]["price"]
