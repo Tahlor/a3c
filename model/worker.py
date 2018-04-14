@@ -139,6 +139,9 @@ class Worker(Thread):
             # Initialize model
             sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
 
+            # Add graph
+            self.summary_writer.add_graph(self.summary_writer.graph)
+
             try:
                 while not coord.should_stop():
                     count_string = str(self.T)
@@ -163,6 +166,12 @@ class Worker(Thread):
                     #print("Updating parameters")
                     self.global_step = int(count_string)
                     self.update(sess)
+
+                    # Write out profits
+                    portfolio_value = self.exchange.get_value()-self.exchange.starting_cash
+                    self.summary_writer.add_summary (self.log_scalar("portfolio", portfolio_value, self.global_step), self.global_step)
+
+
                     if int(count_string) % 100 == 0:
                         print("Finished step #{}, net worth {}, value loss {}, policy loss {}".format(int(count_string), self.exchange.get_value(), self.value_loss, self.policy_loss))
                         #print("Actions {}".format(self.chosen_actions))
@@ -228,3 +237,18 @@ class Worker(Thread):
 
         self.summary_writer.add_summary(loss, self.global_step)
         #print("Values loss: {}".format(self.value_loss))
+
+
+    def log_scalar(self, tag, value, step):
+        """Log a scalar variable.
+        Parameter
+        ----------
+        tag : basestring
+            Name of the scalar
+        value
+        step : int
+            training iteration
+        """
+        summary = tf.Summary(value=[tf.Summary.Value(tag=tag,
+                                                     simple_value=value)])
+        return summary

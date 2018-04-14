@@ -103,13 +103,15 @@ class Model:
                 #self.inputs_ph 1 X SEQ X (eg. 10 input prices/sides)
                 #output_list = fc_list(self.inputs_ph, self.layer_size)
                 #tf.initializers.xavier_initializer()
-                temp_inputs = tf.reshape(self.inputs_ph, [self.batch_size * self.seq_length,-1])
-                output_list = tf.contrib.layers.fully_connected(temp_inputs, self.layer_size, weights_initializer=MAIN_INITIALIZER, biases_initializer=tf.zeros_initializer()) # this is just a 256 node network instead of GRU
 
-                # Put it back into batch space
-                output_list = tf.reshape(output_list, [self.batch_size, self.seq_length, -1] )
-                self.output_list = output_list
-                #output_list = tf.unstack(output_list) # needs to be a list???
+                with tf.name_scope("naive_shared_network") as scope:
+                    temp_inputs = tf.reshape(self.inputs_ph, [self.batch_size * self.seq_length,-1])
+                    output_list = tf.contrib.layers.fully_connected(temp_inputs, self.layer_size, weights_initializer=MAIN_INITIALIZER, biases_initializer=tf.zeros_initializer()) # this is just a 256 node network instead of GRU
+
+                    # Put it back into batch space
+                    output_list = tf.reshape(output_list, [self.batch_size, self.seq_length, -1] )
+                    self.output_list = output_list
+                    #output_list = tf.unstack(output_list) # needs to be a list???
 
                 #inputs, num_nodes, batch_size
                 actions_raw = fc_list2(inputs = output_list, num_nodes = self.number_of_actions * 2, batch_size = self.batch_size * self.seq_length, name='action', activation=None)
@@ -119,18 +121,19 @@ class Model:
                 self.value_op = tf.reshape(self.value_op1,[self.batch_size, self.seq_length]) # model expects SEQ * 1
                 #print(self.value_op.shape)
             else:
-                gru_cells = get_gru(self.num_layers, self.layer_size)
-                self.multi_cell = tf.nn.rnn_cell.MultiRNNCell(gru_cells)
-                # initial_state = self.multi_cell.zero_state(batch_size=self.batch_size, dtype=tf.float32)
-                initial_state = tuple([self.gru_state_ph for _ in range(self.num_layers)])
+                with tf.name_scope("gru_shared_network") as scope:
+                    gru_cells = get_gru(self.num_layers, self.layer_size)
+                    self.multi_cell = tf.nn.rnn_cell.MultiRNNCell(gru_cells)
+                    # initial_state = self.multi_cell.zero_state(batch_size=self.batch_size, dtype=tf.float32)
+                    initial_state = tuple([self.gru_state_ph for _ in range(self.num_layers)])
 
-                with tf.variable_scope('rnn_decoder') as scope:
-                    # network_output is a tuple of (output_list, final_state)
-                    # note that (output_list) is really just the GRU state at each time step
-                    # (e.g. the final element in output_list is equal to final_state)
-                    self.network_output = seq2seq.rnn_decoder(inputs, initial_state, self.multi_cell)
-                    self.output_list = self.network_output[0]
-                    final_state = self.network_output[1]
+                    with tf.variable_scope('rnn_decoder') as scope:
+                        # network_output is a tuple of (output_list, final_state)
+                        # note that (output_list) is really just the GRU state at each time step
+                        # (e.g. the final element in output_list is equal to final_state)
+                        self.network_output = seq2seq.rnn_decoder(inputs, initial_state, self.multi_cell)
+                        self.output_list = self.network_output[0]
+                        final_state = self.network_output[1]
 
 
                 # Actions distribution: [batch_size x seq_length x number_of_actions x 2]
