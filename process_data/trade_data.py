@@ -26,12 +26,11 @@ class TradeData:
 
         # Open CSV
         if self.input_path[-4:] == ".csv":
-            #self.load_csv()
+            # self.load_csv()
 
             # Load as numpy
-            self.data = np.genfromtxt(self.input_path, names="price, side, amount, time", dtype="float16, byte, float16, float64", delimiter=',',
-                                   usecols=(1, 2, 3, 4), unpack=True, skip_header=1,
-                                   converters={2:buy_sell_encoder, 4: getDateTimeFromISO8601String})
+            self.data = np.genfromtxt(self.input_path, names="price, side, time", dtype="float64, int, int", delimiter=',',
+                                   usecols=(1, 2, 3), unpack=True, skip_header=1)
         # Open a Numpy thing
         else:
             self.data = np.load(self.input_path)
@@ -93,7 +92,8 @@ def create_small_dataset():
 
 if __name__ == "__main__":
     #create_small_dataset()
-    ALL_DATA = r"../data/BTC-USD.npy"
+    # ALL_DATA = r"../data/BTC-USD.npy"
+    sine_data = r'./data/toy_sine.csv'
     if False:
         dataset_small = r"../data/BTC-USD_VERY_SHORT.csv"
         dataset_small = r"../data/BTC-USD_SHORT.csv"
@@ -109,7 +109,8 @@ if __name__ == "__main__":
         print(myData.prices_at_time)
 
     freq = 100
-    myData = TradeData(ALL_DATA)
-    myData.sample_from_data(freq = freq, start = 10000)
-    myData.save_np(r"../data/BTC_USD_{}_FREQ.npy".format(freq))
+    # myData = TradeData(ALL_DATA)
+    myData = TradeData(sine_data)
+    # myData.sample_from_data(freq = freq, start = 10000)
+    myData.save_np(r"./data/toy_sine.npy")
     print("Done")
