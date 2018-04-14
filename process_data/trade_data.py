@@ -6,7 +6,7 @@ from io import StringIO
 import csv
 import os
 import shutil
-from .utils import *
+from utils import *
 
 from datetime import datetime
 datetime_object = datetime.strptime('Jun 1 2005  1:33PM', '%b %d %Y %I:%M%p')
@@ -53,6 +53,9 @@ class TradeData:
 
             for i in self.data:
                 wr.writerow(i)
+    def sample_from_data(self, start, freq):
+        self.data = self.data[start::freq]
+
 
     def save_np(self, output_path):
         np.save(output_path, self.data)
@@ -90,10 +93,11 @@ def create_small_dataset():
 
 if __name__ == "__main__":
     #create_small_dataset()
-    if True:
-        dataset_small = r"./data/BTC-USD_VERY_SHORT.csv"
-        dataset_small = r"./data/BTC-USD_SHORT.csv"
-        dataset_small = r"./data/GDAX/BTC-USD.csv"
+    ALL_DATA = r"../data/BTC-USD.npy"
+    if False:
+        dataset_small = r"../data/BTC-USD_VERY_SHORT.csv"
+        dataset_small = r"../data/BTC-USD_SHORT.csv"
+        dataset_small = r"../data/GDAX/BTC-USD.csv"
 
         myData = TradeData(dataset_small)
         myData.data = np.asarray(myData.data)
@@ -104,9 +108,8 @@ if __name__ == "__main__":
         myData.generate_prices_at_time()
         print(myData.prices_at_time)
 
-if __name__ == "__main__":
-    make_data()
+    freq = 100
     myData = TradeData(ALL_DATA)
-    print(myData.data[0:10][0])
-    myData.sample_from_data(freq = 100, start = 10000)
-    myData.save_np(r"../data/BTC_USD_100_FREQ.npy")
+    myData.sample_from_data(freq = freq, start = 10000)
+    myData.save_np(r"../data/BTC_USD_{}_FREQ.npy".format(freq))
+    print("Done")

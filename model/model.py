@@ -9,6 +9,10 @@ sys.path.append("..")
 # import model.value
 # import model.policy
 
+MAIN_INITIALIZER = tfcl.variance_scaling_initializer()
+#tfcl.variance_scaling_initializer()
+#tf.ones_initializer()
+
 def fc(inputs, num_nodes, name='0', activation=tf.nn.relu):
     with tf.variable_scope('fully_connected', reuse=tf.AUTO_REUSE) as scope:
         weights = tf.get_variable('W_' + name,
@@ -38,7 +42,7 @@ def fc_list(inputs, num_nodes, name='0', activation=tf.nn.relu):
 def fc_list2(inputs, num_nodes, batch_size, name='1', activation=tf.nn.relu):
     # batch_size = self.batch_size * self.seq_length
     temp_inputs = tf.reshape(inputs, [batch_size, -1])
-    output_list = tf.contrib.layers.fully_connected(temp_inputs, num_nodes)
+    output_list = tf.contrib.layers.fully_connected(temp_inputs, num_nodes, weights_initializer=MAIN_INITIALIZER)
     return output_list
 
 def get_gru(num_layers, state_dim, reuse=False):
@@ -65,7 +69,7 @@ class Model:
         self.actions_op = None
         self.value_op = None
         self.loss_op = None
-        self.optimizer = None
+        self.optimizer = tf.train.RMSPropOptimizer(0.00025, 0.99, 0.0, 1e-6)
         self.saver = None
         self.trainable = trainable
         self.graph = tf.Graph()
@@ -95,19 +99,21 @@ class Model:
             if self.naive:
                 #self.inputs_ph 1 X SEQ X (eg. 10 input prices/sides)
                 #output_list = fc_list(self.inputs_ph, self.layer_size)
+                #tf.initializers.xavier_initializer()
                 temp_inputs = tf.reshape(self.inputs_ph, [self.batch_size * self.seq_length,-1])
-                output_list = tf.contrib.layers.fully_connected(temp_inputs, self.layer_size) # this is just a 256 node network instead of GRU
+                output_list = tf.contrib.layers.fully_connected(temp_inputs, self.layer_size, weights_initializer=MAIN_INITIALIZER, biases_initializer=tf.zeros_initializer()) # this is just a 256 node network instead of GRU
 
                 # Put it back into batch space
                 output_list = tf.reshape(output_list, [self.batch_size, self.seq_length, -1] )
+                self.output_list = output_list
                 #output_list = tf.unstack(output_list) # needs to be a list???
 
                 #inputs, num_nodes, batch_size
                 actions_raw = fc_list2(inputs = output_list, num_nodes = self.number_of_actions * 2, batch_size = self.batch_size * self.seq_length, name='action', activation=tf.nn.tanh)
-                self.value_op = fc_list2(inputs=output_list, num_nodes=1,
+                self.value_op1 = fc_list2(inputs=output_list, num_nodes=1,
                                        batch_size=self.batch_size * self.seq_length, name='action',
                                        activation=None) # this is (SEQ LEN * BATCH) X 1
-                self.value_op = tf.reshape(self.value_op,[self.batch_size, self.seq_length]) # model expects SEQ * 1
+                self.value_op = tf.reshape(self.value_op1,[self.batch_size, self.seq_length]) # model expects SEQ * 1
                 #print(self.value_op.shape)
             else:
                 gru_cells = get_gru(self.num_layers, self.layer_size)
@@ -169,13 +175,12 @@ class Model:
         #  e.g. even if an OK path is found at first, high entropy => higher loss, so it will take
         #   that good path with a grain of salt
         self.policy_loss =  -tf.reduce_mean(log_prob * self.policy_advantage + entropy * self.entropy_weight)
-
-        self.optimizer = tf.train.RMSPropOptimizer(0.00025, 0.99, 0.0, 1e-6)
         self.policy_grads_and_vars = self.optimizer.compute_gradients(self.policy_loss)
         self.policy_grads_and_vars = [[grad, var] for grad, var in self.policy_grads_and_vars if grad is not None]
         self.policy_train_op = self.optimizer.apply_gradients(self.policy_grads_and_vars, global_step=tf.train.get_global_step())
+        #self.policy_train_op = tf.Variable([0])
         self.policy_loss_summary = tf.summary.scalar('policy_loss_summary', self.policy_loss)
-        self.policy_dict = {"entropy":entropy, "log_prob": log_prob, "policy_loss":self.policy_loss, "mess":mess}
+        self.policy_dict = {"entropy":entropy, "log_prob": log_prob, "policy_loss":self.policy_loss, "mess":mess, "actions": self.action_mu, "output_list": self.output_list}
 
         return self.policy_train_op
 
@@ -186,10 +191,10 @@ class Model:
         self.value_loss = tf.reduce_sum(self.value_losses, name="value_loss")
 
         #self.optimizer = tf.train.AdamOptimizer(1e-4)
-        self.optimizer = tf.train.RMSPropOptimizer(0.00025, 0.99, 0.0, 1e-6)
         self.value_grads_and_vars = self.optimizer.compute_gradients(self.value_loss)
         self.value_grads_and_vars = [[grad, var] for grad, var in self.value_grads_and_vars if grad is not None]
         self.value_train_op = self.optimizer.apply_gradients(self.value_grads_and_vars, global_step=tf.train.get_global_step())
+        #self.value_train_op = tf.Variable([0])
         self.value_loss_summary = tf.summary.scalar('value_loss_summary', self.value_loss)
         #self.merged = tf.summary.merge([self.value_loss_summary, self.policy_loss_summary])
         return self.value_train_op
@@ -217,4 +222,3 @@ class Model:
         with tf.Session() as sess:
             policy = sess.run(self.policy_op, feed_dict={self.inputs_ph: input, self.gru_state_ph: gru_state})
         return policy, gru_state
-

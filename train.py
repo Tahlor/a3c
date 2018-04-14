@@ -31,7 +31,7 @@ EPOCHS = 2
 if os.environ["COMPUTERNAME"] == 'DALAILAMA':
     DATA = ".\data\BTC_USD_100_FREQ.npy"
     NAIVE_M0DEL = True
-    GAME_MAX_LENGTH = 5
+    GAME_MAX_LENGTH = 100
     EPOCHS = 10000
 
 
@@ -90,7 +90,6 @@ for worker_id in range(NUM_WORKERS):
 
 # Have each worker somewhat randomly hop around to different dates
 with tf.Session(graph=m.graph) as sess:
-    sess.run(tf.global_variables_initializer())
     coord = tf.train.Coordinator()
 
     # Load a previous checkpoint if it exists -- do this HERE OR IN MODEL?

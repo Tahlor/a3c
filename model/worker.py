@@ -26,6 +26,7 @@ DATA = r"./data/BTC_USD_100_FREQ.npy"
 
 class Worker(Thread):
     def __init__(self, global_model, T, T_max, t_max=1000, states_to_prime = 1000, summary_writer=None, data = DATA):
+        self.previous = None # for testing if input is the same
         self.t = tf.Variable(initial_value=1, trainable=False)
         self.T = T
         self.T_max = T_max
@@ -41,6 +42,7 @@ class Worker(Thread):
 
         # For now, just interface with main model
         self.model = self.global_model
+
         self.summary_writer = summary_writer
 
         # Each worker has an exchange; can be reset to any state
@@ -74,10 +76,17 @@ class Worker(Thread):
         chosen_actions = []
         rewards = []
         # Prime e.g. LSTM
+
         if self.naive:
+
             input_tensor = self.exchange.get_model_input_naive() # BATCH X SEQ X (Price, Side)
             self.initial_gru_state = np.zeros([self.model.batch_size, self.model.layer_size]) # just feed it some 0's
 
+            # Make sure input is the same
+            # if not self.previous is None:
+            #     assert(self.previous.all() == input_tensor.all())
+            #     print("Same input")
+            # self.previous = input_tensor
 
         else:
             # Prime GRU
@@ -105,7 +114,7 @@ class Worker(Thread):
             rewards.append(R)
             previous_value = self.exchange.get_value()
             self.exchange.get_next_state()
-            self.exchange.get_status()
+            #self.exchange.get_status()
         self.chosen_actions = np.asarray(chosen_actions).reshape([self.model.batch_size, self.t_max, self.model.number_of_actions])
         self.rewards = np.asarray(rewards)
         # self.input_tensor, self.actions, self.states, self.values, self.chosen_actions, self.rewards
@@ -122,7 +131,11 @@ class Worker(Thread):
             self.value_train_op = self.model.update_value()
             self.value_loss_summary = tf.summary.scalar('value_loss', self.model.value_loss)
 
+
             self.summary_writer.graph = self.model.graph
+
+            # Initialize model
+            sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
 
             try:
                 while not coord.should_stop():
@@ -148,9 +161,12 @@ class Worker(Thread):
                     #print("Updating parameters")
                     self.update(sess)
 
-                    if int(count_string) % 10 == 0:
+                    if int(count_string) % 100 == 0:
                         print("Finisehd step #{}, net worth {}, value loss {}, policy loss {}".format(int(count_string), self.exchange.get_value(), self.value_loss, self.policy_loss))
-                        print("Actions {}".format(self.chosen_actions))
+                        #print("Actions {}".format(self.chosen_actions))
+                        #print("Action Mus {}".format(self.policy_loss_dict["actions"]))
+                        #print("Network out {}".format(self.policy_loss_dict["output_list"][0,0:10]))
+
                     if self.T_max is not None and next(self.T) >= self.T_max:
                         tf.logging.info("Reached global step {}. Stopping.".format(self.T))
                         print("Reached global step {}. Stopping.".format(self.T))
@@ -184,9 +200,9 @@ class Worker(Thread):
         self.update_values(sess)
 
     def update_policy(self, sess):
-        sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
+        # sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
         # self.policy_dict, self.model.policy_loss
-        _, loss, policy_loss = sess.run([self.policy_train_op, self.policy_loss_summary, self.model.policy_dict], feed_dict={self.model.inputs_ph: self.input_tensor, self.model.gru_state_ph: self.initial_gru_state,
+        _, loss, self.policy_loss_dict = sess.run([self.policy_train_op, self.policy_loss_summary, self.model.policy_dict], feed_dict={self.model.inputs_ph: self.input_tensor, self.model.gru_state_ph: self.initial_gru_state,
             self.model.policy_advantage: self.policy_advantage, self.model.chosen_actions: self.chosen_actions})
         #_, loss = sess.run([self.policy_train_op, self.policy_loss_summary], feed_dict={self.model.inputs_ph: self.input_tensor, self.model.gru_state_ph: self.initial_gru_state,
             #self.model.policy_advantage: self.policy_advantage, self.model.chosen_actions: self.chosen_actions})
@@ -195,11 +211,12 @@ class Worker(Thread):
         #print(np.concatenate((pl["entropy"], pl["mess"]), axis=2))
         #print(pl["log_prob"])
         #print(pl["policy_loss"])
-        self.policy_loss = policy_loss["policy_loss"]
+
+        self.policy_loss = self.policy_loss_dict ["policy_loss"]
         #print("Policy loss: {}".format(policy_loss))
 
     def update_values(self, sess):
-        sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
+        # sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
         _, loss, self.value_loss = sess.run([self.value_train_op, self.value_loss_summary, self.model.value_loss],
                                        feed_dict={self.model.inputs_ph: self.input_tensor, self.model.gru_state_ph: self.initial_gru_state,self.model.discounted_rewards: self.discounted_rewards})
         #_, loss = sess.run([self.value_train_op, self.value_loss_summary],
