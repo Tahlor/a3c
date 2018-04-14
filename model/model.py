@@ -13,6 +13,8 @@ MAIN_INITIALIZER = tfcl.variance_scaling_initializer()
 #tfcl.variance_scaling_initializer()
 #tf.ones_initializer()
 
+ACTION_ACTIVATION = tf.nn.sigmoid
+
 def fc(inputs, num_nodes, name='0', activation=tf.nn.relu):
     with tf.variable_scope('fully_connected', reuse=tf.AUTO_REUSE) as scope:
         weights = tf.get_variable('W_' + name,
@@ -54,7 +56,7 @@ def get_gru(num_layers, state_dim, reuse=False):
     return gru_cells
 
 class Model:
-    def __init__(self, batch_size=1, inputs_per_time_step=2, seq_length=1000, num_layers=1, layer_size=256, trainable = True, discount = .9, naive=False):
+    def __init__(self, batch_size=1, inputs_per_time_step=2, seq_length=1000, num_layers=1, layer_size=128, trainable = True, discount = .9, naive=False):
         self.seq_length = seq_length
         self.batch_size = batch_size
         if not naive:
@@ -74,7 +76,7 @@ class Model:
         self.trainable = trainable
         self.graph = tf.Graph()
         self.discount = discount
-        self.entropy_weight = 1e-4
+        self.entropy_weight = 1e-4 * 0
         self.naive = naive
         self.network_output = None
         self.build_network()
@@ -110,7 +112,7 @@ class Model:
                 #output_list = tf.unstack(output_list) # needs to be a list???
 
                 #inputs, num_nodes, batch_size
-                actions_raw = fc_list2(inputs = output_list, num_nodes = self.number_of_actions * 2, batch_size = self.batch_size * self.seq_length, name='action', activation=tf.nn.tanh)
+                actions_raw = fc_list2(inputs = output_list, num_nodes = self.number_of_actions * 2, batch_size = self.batch_size * self.seq_length, name='action', activation=None)
                 self.value_op1 = fc_list2(inputs=output_list, num_nodes=1,
                                        batch_size=self.batch_size * self.seq_length, name='action',
                                        activation=None) # this is (SEQ LEN * BATCH) X 1
@@ -140,7 +142,7 @@ class Model:
                 self.value_op = fc_list(self.output_list, 1, name='value', activation=None)
 
             self.actions_op = tf.reshape(actions_raw, [self.batch_size, self.seq_length, self.number_of_actions, 2])
-            self.action_mu = tf.nn.tanh(self.actions_op[:, :, :, 0])
+            self.action_mu = ACTION_ACTIVATION(self.actions_op[:, :, :, 0]) - .5
             self.action_sd = tf.nn.softplus(self.actions_op[:, :, :, 1])
 
             self.saver = tf.train.Saver()
@@ -162,12 +164,15 @@ class Model:
         action_dist = tf.contrib.distributions.Normal(self.action_mu, self.action_sd) # [batch, t, # of actions]
 
         # Get log prob given chosen actions
-        log_prob = action_dist.log_prob(self.chosen_actions) # probability < 1 , so negative value here
+        log_prob = action_dist.log_prob(self.chosen_actions) # probability < 1 , so negative value here, [batch, t, # of actions]
 
         # Calculate entropy
         # use absolute value of action_mu so it doesn't go negative and blow up the log,
         # then if action_mu was negative, flip the sign on the entropy value
-        entropy = -1/2 * (tf.log(2*tf.abs(self.action_mu) * math.pi * self.action_sd ** 2 + 1e-2) + 1) # N steps X # of actions; add .0001 to prevent inf
+        entropy = -1/2 * (tf.log(2*abs(self.action_mu) * math.pi * self.action_sd ** 2 + 1e-2) + 1) # N steps X # of actions; add .0001 to prevent inf
+
+        # Entropy goes negative for small SD, small action_mu; especially small SD
+
         # for i in range(entropy.shape[0]):
         #     entropy = tf.cond(self.action_mu[0][i][0] < 0, lambda: -entropy[0][i][0], lambda: entropy[0][i][0])
         # entropy = log_prob.entropy() # [batch, t, # of actions], negative
@@ -179,7 +184,9 @@ class Model:
         # Loss -- entropy is higher with high uncertainty -- ensures exploration at first,
         #  e.g. even if an OK path is found at first, high entropy => higher loss, so it will take
         #   that good path with a grain of salt
-        self.policy_loss =  -tf.reduce_mean(log_prob * self.policy_advantage + entropy * self.entropy_weight)
+
+        # policy_advantage is negative, log_prob is positive
+        self.policy_loss =  -tf.reduce_mean(log_prob * self.policy_advantage + entropy * self.entropy_weight) # policy advantage [batch, t]
         self.policy_grads_and_vars = self.optimizer.compute_gradients(self.policy_loss)
         self.policy_grads_and_vars = [[grad, var] for grad, var in self.policy_grads_and_vars if grad is not None]
         self.policy_train_op = self.optimizer.apply_gradients(self.policy_grads_and_vars, global_step=tf.train.get_global_step())

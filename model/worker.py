@@ -117,6 +117,9 @@ class Worker(Thread):
             #self.exchange.get_status()
         self.chosen_actions = np.asarray(chosen_actions).reshape([self.model.batch_size, self.t_max, self.model.number_of_actions])
         self.rewards = np.asarray(rewards)
+
+        if np.ndim(rewards) < 2: # if no batch dimension
+            self.rewards = self.rewards[None,...]
         # self.input_tensor, self.actions, self.states, self.values, self.chosen_actions, self.rewards
 
 
@@ -158,8 +161,8 @@ class Worker(Thread):
 
                     # Update the global networks
                     #print("Updating parameters")
+                    self.global_step = int(count_string)
                     self.update(sess)
-
                     if int(count_string) % 100 == 0:
                         print("Finished step #{}, net worth {}, value loss {}, policy loss {}".format(int(count_string), self.exchange.get_value(), self.value_loss, self.policy_loss))
                         #print("Actions {}".format(self.chosen_actions))
@@ -182,19 +185,23 @@ class Worker(Thread):
         # states is batch x T x GRU SIZE
         # input_tensor is batch x T X INPUT_SIZE
 
-        R = self.values[:,-1] # get value in last state
-
         # Accumulate gradients at each time step
         discounted_rewards = []
         policy_advantage = []
 
-        for n, r in enumerate(self.rewards[::-1]):
+        rewards_swapped = np.transpose(self.rewards[::-1], [1,0]) # swap batch and seq axes, so SEX X BATCH; also reverse
+        values_swapped = np.transpose(self.values[::-1], [1, 0])
+        R = values_swapped[0] # get value in last state
+
+        for n, r in enumerate(rewards_swapped):
             R = r + self.model.discount*R
             discounted_rewards.append(R)
-            policy_advantage.append(R - self.values[:,n])
+            policy_advantage.append(R - values_swapped[n])
 
-        self.discounted_rewards = np.asarray(discounted_rewards)[:, ::-1].T # batch, t , make it go forward again
-        self.policy_advantage = np.asarray(policy_advantage).T
+        # Unreverse and transpose
+        self.discounted_rewards = np.asarray(discounted_rewards[::-1]).transpose([1,0])
+        self.policy_advantage = np.asarray(policy_advantage[::-1]).transpose([1,0])
+
         self.update_policy(sess)
         self.update_values(sess)
 
@@ -204,7 +211,7 @@ class Worker(Thread):
             self.model.policy_advantage: self.policy_advantage, self.model.chosen_actions: self.chosen_actions})
         #_, loss = sess.run([self.policy_train_op, self.policy_loss_summary], feed_dict={self.model.inputs_ph: self.input_tensor, self.model.gru_state_ph: self.initial_gru_state,
             #self.model.policy_advantage: self.policy_advantage, self.model.chosen_actions: self.chosen_actions})
-        self.summary_writer.add_summary(loss)
+        self.summary_writer.add_summary(loss, self.global_step)
 
         #print(np.concatenate((pl["entropy"], pl["mess"]), axis=2))
         #print(pl["log_prob"])
@@ -219,5 +226,5 @@ class Worker(Thread):
         #_, loss = sess.run([self.value_train_op, self.value_loss_summary],
                                         # feed_dict={self.model.inputs_ph: self.input_tensor, self.model.gru_state_ph: self.initial_gru_state,self.model.discounted_rewards: self.discounted_rewards})
 
-        self.summary_writer.add_summary(loss)
+        self.summary_writer.add_summary(loss, self.global_step)
         #print("Values loss: {}".format(self.value_loss))
