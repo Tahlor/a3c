@@ -54,8 +54,8 @@ class Exchange:
         self.log_price_changes = self.log_prices[1:] - self.log_prices[0:-1]
         self.gru_prime_length = self.game_length
 
-        min_state = max(self.naive_sample_pattern +  [self.gru_prime_length, 3000]) # don't start at 0, make sure we can go back in time etc.
-        max_state = len(self.log_prices) - self.game_length -  10 # give us a small buffer
+        min_state = min(self.naive_sample_pattern + [self.gru_prime_length, 10])  # don't start at 0, make sure we can go back in time etc.
+        max_state = len(self.log_prices) - self.game_length - 10  # give us a small buffer
         self.state_range = [min_state, max_state]
         self.state = min_state
         self.current_price = self.vanilla_prices[self.state]

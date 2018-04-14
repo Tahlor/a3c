@@ -46,7 +46,7 @@ class Worker(Thread):
         self.summary_writer = summary_writer
 
         # Each worker has an exchange; can be reset to any state
-        self.exchange = Exchange(data, time_interval=60, game_length=self.t_max)
+        self.exchange = Exchange(data, time_interval=1, game_length=self.t_max)
 
 
         # create thread-specific copy of global parameters
@@ -154,7 +154,7 @@ class Worker(Thread):
 
                     #print("Playing game for {} turns".format(self.t_max))
                     starting_state = np.random.randint(*self.exchange.state_range)
-                    self.play_game2(sess, starting_state=20000)
+                    self.play_game2(sess, starting_state=10)
 
                     # Update the global networks
                     #print("Updating parameters")

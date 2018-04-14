@@ -24,11 +24,13 @@ from exchange import Exchange
 # Game parameters
 CASH = 10000
 BTC = 0
-DATA = r"./data/BTC_USD_100_FREQ.npy"
+DATA = r"./data/toy_sine.npy"
+# DATA = r"./data/BTC-USD_VERY_SHORT.npy"
 NAIVE_M0DEL = False
-GAME_MAX_LENGTH = 1000
+GAME_MAX_LENGTH = 10
 EPOCHS = 1000
 MODEL_DIR = "../tmp/"
+NUM_INPUTS = 2
 TAYLOR = False
 
 if os.environ["COMPUTERNAME"] == 'DALAILAMA':
@@ -48,7 +50,7 @@ tf.flags.DEFINE_boolean("reset", False, "If set, delete the existing model direc
 tf.flags.DEFINE_integer("parallelism", None, "Number of threads to run. If not set we run [num_cpu_cores] threads.")
 tf.flags.DEFINE_boolean("naive", NAIVE_M0DEL, "Use naive MLP.")
 tf.flags.DEFINE_integer("naive_lookback", 10, "Number of back prices to look at.")
-tf.flags.DEFINE_integer("num_input_types", 2, "E.g. prices, side, timestampe etc.")
+tf.flags.DEFINE_integer("num_input_types", NUM_INPUTS, "E.g. prices, side, timestampe etc.")
 tf.flags.DEFINE_string("data_path", DATA, "Path to .npy input file")
 FLAGS = tf.flags.FLAGS
 
