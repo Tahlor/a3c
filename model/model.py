@@ -76,8 +76,9 @@ class Model:
         self.discount = discount
         self.entropy_weight = 1e-4
         self.naive = naive
-        self.build_network()
         self.network_output = None
+        self.build_network()
+
 
     def get_params(self):
         return {"input_size":self.input_size, "layer_size":self.layer_size, "trainable": self.trainable, "discount":self.discount}
@@ -126,17 +127,17 @@ class Model:
                     # note that (output_list) is really just the GRU state at each time step
                     # (e.g. the final element in output_list is equal to final_state)
                     self.network_output = seq2seq.rnn_decoder(inputs, initial_state, self.multi_cell)
-                    output_list = self.network_output[0]
+                    self.output_list = self.network_output[0]
                     final_state = self.network_output[1]
 
 
                 # Actions distribution: [batch_size x seq_length x number_of_actions x 2]
                 # i.e. one mu and one standard deviation for each action at each step of each sequence
-                actions_raw = fc_list(output_list, self.number_of_actions * 2, name='action', activation=None)
+                actions_raw = fc_list(self.output_list, self.number_of_actions * 2, name='action', activation=None)
 
                 # Value: [batch_size x seq_length]
                 # i.e. one value per step in the sequence, for all sequences
-                self.value_op = fc_list(output_list, 1, name='value', activation=None)
+                self.value_op = fc_list(self.output_list, 1, name='value', activation=None)
 
             self.actions_op = tf.reshape(actions_raw, [self.batch_size, self.seq_length, self.number_of_actions, 2])
             self.action_mu = tf.nn.tanh(self.actions_op[:, :, :, 0])
@@ -164,7 +165,11 @@ class Model:
         log_prob = action_dist.log_prob(self.chosen_actions) # probability < 1 , so negative value here
 
         # Calculate entropy
-        entropy = -1/2 * (tf.log(2*self.action_mu * math.pi * self.action_sd ** 2 + 1e-2) + 1) # N steps X # of actions; add .0001 to prevent inf
+        # use absolute value of action_mu so it doesn't go negative and blow up the log,
+        # then if action_mu was negative, flip the sign on the entropy value
+        entropy = -1/2 * (tf.log(2*tf.abs(self.action_mu) * math.pi * self.action_sd ** 2 + 1e-2) + 1) # N steps X # of actions; add .0001 to prevent inf
+        # for i in range(entropy.shape[0]):
+        #     entropy = tf.cond(self.action_mu[0][i][0] < 0, lambda: -entropy[0][i][0], lambda: entropy[0][i][0])
         # entropy = log_prob.entropy() # [batch, t, # of actions], negative
         mess = 2*self.action_mu * math.pi * self.action_sd ** 2
 
