@@ -25,7 +25,7 @@ DATA = r"./data/BTC_USD_100_FREQ.npy"
 # Make some toy data
 
 class Worker(Thread):
-    def __init__(self, global_model, T, T_max, t_max=1000, states_to_prime = 1000, summary_writer=None):
+    def __init__(self, global_model, T, T_max, t_max=1000, states_to_prime = 1000, summary_writer=None, data = DATA):
         self.t = tf.Variable(initial_value=1, trainable=False)
         self.T = T
         self.T_max = T_max
@@ -44,7 +44,7 @@ class Worker(Thread):
         self.summary_writer = summary_writer
 
         # Each worker has an exchange; can be reset to any state
-        self.exchange = Exchange(DATA, time_interval=60, game_length=self.t_max)
+        self.exchange = Exchange(data, time_interval=60, game_length=self.t_max)
 
 
         # create thread-specific copy of global parameters
@@ -105,9 +105,9 @@ class Worker(Thread):
             rewards.append(R)
             previous_value = self.exchange.get_value()
             self.exchange.get_next_state()
+            self.exchange.get_status()
         self.chosen_actions = np.asarray(chosen_actions).reshape([self.model.batch_size, self.t_max, self.model.number_of_actions])
         self.rewards = np.asarray(rewards)
-        print("Final Value: {}".format(self.exchange.get_value()))
         # self.input_tensor, self.actions, self.states, self.values, self.chosen_actions, self.rewards
 
 
@@ -131,7 +131,7 @@ class Worker(Thread):
                     if end_idx == -1:
                         end_idx = count_string.find(')')
                     count_string = count_string[6:end_idx]
-                    print("Running step #{}".format(count_string))
+
                     # Copy Parameters from the global networks
                     #sess.run(self.copy_params_op)
                     # self.loadNetworkFromSnapshot()
@@ -139,13 +139,18 @@ class Worker(Thread):
                     # Pre choose starting states without replacement:
                     # state_range = [int(x/exchange.game_length) for x in self.exchange.state_range]
                     # (np.random.choice(state_range[1]-state_range[0] , state_range[1]-state_range[0] , replace=False) + state_range[0] ) * exchange.game_length
-                    print("Playing game for {} turns".format(self.t_max))
-                    self.play_game2(sess, starting_state=np.random.randint(*self.exchange.state_range))
+
+                    #print("Playing game for {} turns".format(self.t_max))
+                    starting_state = np.random.randint(*self.exchange.state_range)
+                    self.play_game2(sess, starting_state=20000)
 
                     # Update the global networks
-                    print("Updating parameters")
+                    #print("Updating parameters")
                     self.update(sess)
 
+                    if int(count_string) % 10 == 0:
+                        print("Finisehd step #{}, net worth {}, value loss {}, policy loss {}".format(int(count_string), self.exchange.get_value(), self.value_loss, self.policy_loss))
+                        print("Actions {}".format(self.chosen_actions))
                     if self.T_max is not None and next(self.T) >= self.T_max:
                         tf.logging.info("Reached global step {}. Stopping.".format(self.T))
                         print("Reached global step {}. Stopping.".format(self.T))
@@ -180,19 +185,25 @@ class Worker(Thread):
 
     def update_policy(self, sess):
         sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
-        _, loss, policy_loss = sess.run([self.policy_train_op, self.policy_loss_summary, self.model.policy_loss], feed_dict={self.model.inputs_ph: self.input_tensor, self.model.gru_state_ph: self.initial_gru_state,
+        # self.policy_dict, self.model.policy_loss
+        _, loss, policy_loss = sess.run([self.policy_train_op, self.policy_loss_summary, self.model.policy_dict], feed_dict={self.model.inputs_ph: self.input_tensor, self.model.gru_state_ph: self.initial_gru_state,
             self.model.policy_advantage: self.policy_advantage, self.model.chosen_actions: self.chosen_actions})
         #_, loss = sess.run([self.policy_train_op, self.policy_loss_summary], feed_dict={self.model.inputs_ph: self.input_tensor, self.model.gru_state_ph: self.initial_gru_state,
             #self.model.policy_advantage: self.policy_advantage, self.model.chosen_actions: self.chosen_actions})
         self.summary_writer.add_summary(loss)
-        print("Policy loss: {}".format(policy_loss))
+
+        #print(np.concatenate((pl["entropy"], pl["mess"]), axis=2))
+        #print(pl["log_prob"])
+        #print(pl["policy_loss"])
+        self.policy_loss = policy_loss["policy_loss"]
+        #print("Policy loss: {}".format(policy_loss))
 
     def update_values(self, sess):
         sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
-        _, loss, value_loss = sess.run([self.value_train_op, self.value_loss_summary, self.model.value_loss],
+        _, loss, self.value_loss = sess.run([self.value_train_op, self.value_loss_summary, self.model.value_loss],
                                        feed_dict={self.model.inputs_ph: self.input_tensor, self.model.gru_state_ph: self.initial_gru_state,self.model.discounted_rewards: self.discounted_rewards})
         #_, loss = sess.run([self.value_train_op, self.value_loss_summary],
                                         # feed_dict={self.model.inputs_ph: self.input_tensor, self.model.gru_state_ph: self.initial_gru_state,self.model.discounted_rewards: self.discounted_rewards})
 
         self.summary_writer.add_summary(loss)
-        print("Values loss: {}".format(value_loss))
+        #print("Values loss: {}".format(self.value_loss))

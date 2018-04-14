@@ -31,8 +31,9 @@ EPOCHS = 2
 if os.environ["COMPUTERNAME"] == 'DALAILAMA':
     DATA = ".\data\BTC_USD_100_FREQ.npy"
     NAIVE_M0DEL = True
-    GAME_MAX_LENGTH = 1000
-    EPOCHS = 100
+    GAME_MAX_LENGTH = 5
+    EPOCHS = 10000
+
 
 tf.flags.DEFINE_string("model_dir", "../tmp/", "Directory to write Tensorboard summaries and videos to.")
 tf.flags.DEFINE_string("env", "exchange_v1.0", "Name of game")
@@ -44,6 +45,7 @@ tf.flags.DEFINE_integer("parallelism", None, "Number of threads to run. If not s
 tf.flags.DEFINE_boolean("naive", NAIVE_M0DEL, "Use naive MLP.")
 tf.flags.DEFINE_integer("naive_lookback", 10, "Number of back prices to look at.")
 tf.flags.DEFINE_integer("num_input_types", 2, "E.g. prices, side, timestampe etc.")
+tf.flags.DEFINE_string("data_path", DATA, "Path to .npy input file")
 FLAGS = tf.flags.FLAGS
 
 
@@ -83,7 +85,7 @@ for worker_id in range(NUM_WORKERS):
         worker_summary_writer = summary_writer
 
     # Initialize new workers
-    worker = Worker(global_model=m, T=T, T_max=FLAGS.max_global_steps, t_max=FLAGS.t_max, states_to_prime=FLAGS.t_max, summary_writer=worker_summary_writer)
+    worker = Worker(global_model=m, T=T, T_max=FLAGS.max_global_steps, t_max=FLAGS.t_max, states_to_prime=FLAGS.t_max, summary_writer=worker_summary_writer, data = FLAGS.data_path)
     workers.append(worker)
 
 # Have each worker somewhat randomly hop around to different dates

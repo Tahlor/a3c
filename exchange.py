@@ -49,6 +49,7 @@ class Exchange:
 
         self.data = np.load(data_stream)
         self.vanilla_prices = self.data[:]["price"].astype('float64')
+        print("States in data: {}".format(len(self.vanilla_prices)))
         self.log_prices = np.log(np.copy(self.data[:]["price"].astype("float64")))
         self.log_price_changes = self.log_prices[1:] - self.log_prices[0:-1]
         self.gru_prime_length = self.game_length
@@ -128,7 +129,7 @@ class Exchange:
 
     def get_next_state(self):
         self.state += 1
-        self.current_price = self.data[self.state]["price"]
+        self.current_price = self.vanilla_prices[self.state] #self.data[self.state]["price"]
         self.price_change = self.price_changes[self.state] # use the log price changes
 
         # Round off

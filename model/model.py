@@ -158,9 +158,9 @@ class Model:
         log_prob = action_dist.log_prob(self.chosen_actions) # probability < 1 , so negative value here
 
         # Calculate entropy
-        entropy = -1/2 * (tf.log(2*self.action_mu * math.pi * self.action_sd ** 2) + 1) # N steps X # of actions
+        entropy = -1/2 * (tf.log(2*self.action_mu * math.pi * self.action_sd ** 2 + 1e-2) + 1) # N steps X # of actions; add .0001 to prevent inf
         # entropy = log_prob.entropy() # [batch, t, # of actions], negative
-
+        mess = 2*self.action_mu * math.pi * self.action_sd ** 2
 
         # Advantage function - exogenous to the policy network
         # advantage = tf.subtract(self.rewards, self.value_op, name='advantage')  #[ batch size=1 * t ]
@@ -175,6 +175,8 @@ class Model:
         self.policy_grads_and_vars = [[grad, var] for grad, var in self.policy_grads_and_vars if grad is not None]
         self.policy_train_op = self.optimizer.apply_gradients(self.policy_grads_and_vars, global_step=tf.train.get_global_step())
         self.policy_loss_summary = tf.summary.scalar('policy_loss_summary', self.policy_loss)
+        self.policy_dict = {"entropy":entropy, "log_prob": log_prob, "policy_loss":self.policy_loss, "mess":mess}
+
         return self.policy_train_op
 
     def update_value(self):
