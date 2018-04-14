@@ -9,6 +9,7 @@ from inspect import getsourcefile
 from model.model import Model
 from model.worker import Worker
 import itertools
+import archipack
 
 current_path = os.path.dirname(os.path.abspath(getsourcefile(lambda:0)))
 import_path = os.path.abspath(os.path.join(current_path, "../.."))
@@ -27,15 +28,18 @@ DATA = r"./data/BTC-USD_SHORT.npy"
 NAIVE_M0DEL = False
 GAME_MAX_LENGTH = 1000
 EPOCHS = 2
+MODEL_DIR = "../tmp/"
+TAYLOR = False
 
 if os.environ["COMPUTERNAME"] == 'DALAILAMA':
     DATA = ".\data\BTC_USD_100_FREQ.npy"
     NAIVE_M0DEL = True
-    GAME_MAX_LENGTH = 100
-    EPOCHS = 10000
+    GAME_MAX_LENGTH = 20
+    EPOCHS = 100000
+    MODEL_DIR = "./tmp"
+    TAYLOR = True
 
-
-tf.flags.DEFINE_string("model_dir", "../tmp/", "Directory to write Tensorboard summaries and videos to.")
+tf.flags.DEFINE_string("model_dir", MODEL_DIR, "Directory to write Tensorboard summaries and videos to.")
 tf.flags.DEFINE_string("env", "exchange_v1.0", "Name of game")
 tf.flags.DEFINE_integer("t_max", GAME_MAX_LENGTH, "Number of steps before performing an update")
 tf.flags.DEFINE_integer("max_global_steps", EPOCHS, "Stop training after this many steps in the environment. Defaults to running indefinitely.")
@@ -47,7 +51,6 @@ tf.flags.DEFINE_integer("naive_lookback", 10, "Number of back prices to look at.
 tf.flags.DEFINE_integer("num_input_types", 2, "E.g. prices, side, timestampe etc.")
 tf.flags.DEFINE_string("data_path", DATA, "Path to .npy input file")
 FLAGS = tf.flags.FLAGS
-
 
 # Set the number of workers
 NUM_WORKERS = multiprocessing.cpu_count()
@@ -65,7 +68,13 @@ if not os.path.exists(CHECKPOINT_DIR):
   os.makedirs(CHECKPOINT_DIR)
 
 # Initialize saver
-summary_writer = tf.summary.FileWriter(os.path.join(MODEL_DIR, "train"))
+train_dir = os.path.join(MODEL_DIR, "train")
+if TAYLOR:
+    train_dir = archipack.createLogDir(basepath=train_dir)
+summary_writer = tf.summary.FileWriter(train_dir)
+if not os.path.exists(train_dir):
+  os.makedirs(train_dir)
+
 # saver = tf.train.Saver(keep_checkpoint_every_n_hours=0.5, max_to_keep=3)
 
 # Initialize model (value and policy nets)

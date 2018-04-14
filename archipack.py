@@ -39,7 +39,7 @@ def find_files(base, pattern):
     matching_files_and_folders = fnmatch.filter(os.listdir(base), pattern)
     return len(matching_files_and_folders)>0
 
-def createLogDir(name = "", force_numerical_ordering = True):
+def createLogDir(basepath = "./tf_logs", name = "", force_numerical_ordering = True):
     n = 1
 
     # Add padding
@@ -47,7 +47,6 @@ def createLogDir(name = "", force_numerical_ordering = True):
         name = " " + name
 
     # Check for existence
-    basepath = "./tf_logs"
     if not os.path.exists(basepath):
         os.mkdir(basepath)
 

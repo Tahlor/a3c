@@ -200,7 +200,6 @@ class Worker(Thread):
         self.update_values(sess)
 
     def update_policy(self, sess):
-        # sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
         # self.policy_dict, self.model.policy_loss
         _, loss, self.policy_loss_dict = sess.run([self.policy_train_op, self.policy_loss_summary, self.model.policy_dict], feed_dict={self.model.inputs_ph: self.input_tensor, self.model.gru_state_ph: self.initial_gru_state,
             self.model.policy_advantage: self.policy_advantage, self.model.chosen_actions: self.chosen_actions})
@@ -216,7 +215,6 @@ class Worker(Thread):
         #print("Policy loss: {}".format(policy_loss))
 
     def update_values(self, sess):
-        # sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
         _, loss, self.value_loss = sess.run([self.value_train_op, self.value_loss_summary, self.model.value_loss],
                                        feed_dict={self.model.inputs_ph: self.input_tensor, self.model.gru_state_ph: self.initial_gru_state,self.model.discounted_rewards: self.discounted_rewards})
         #_, loss = sess.run([self.value_train_op, self.value_loss_summary],
