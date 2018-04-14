@@ -91,15 +91,9 @@ def create_small_dataset():
 if __name__ == "__main__":
     #create_small_dataset()
     if True:
-<<<<<<< HEAD
-        dataset_small = r"../data/BTC-USD_VERY_SHORT.csv"
-        #dataset_small = r"../data/BTC-USD_SHORT.csv"
-        #dataset_small = r"../data/GDAX/BTC-USD.csv"
-=======
         dataset_small = r"./data/BTC-USD_VERY_SHORT.csv"
         dataset_small = r"./data/BTC-USD_SHORT.csv"
         dataset_small = r"./data/GDAX/BTC-USD.csv"
->>>>>>> parent of 93821ec... update
 
         myData = TradeData(dataset_small)
         myData.data = np.asarray(myData.data)
@@ -108,7 +102,6 @@ if __name__ == "__main__":
         print((np.array(myData.data[::30])["price"]))
         print(myData.data[0]["price"])
         myData.generate_prices_at_time()
-<<<<<<< HEAD
         print(myData.prices_at_time)
 
 if __name__ == "__main__":
@@ -117,6 +110,3 @@ if __name__ == "__main__":
     print(myData.data[0:10][0])
     myData.sample_from_data(freq = 100, start = 10000)
     myData.save_np(r"../data/BTC_USD_100_FREQ.npy")
-=======
-        print(myData.prices_at_time)
->>>>>>> parent of 93821ec... update
