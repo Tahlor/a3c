@@ -210,7 +210,7 @@ class Worker(Thread):
         for n, r in enumerate(rewards_swapped):
             R = r + self.model.discount*R
             discounted_rewards.append(R)
-            policy_advantage.append(R - values_swapped[n])
+            policy_advantage.append(-R - values_swapped[n])
 
         # Unreverse and transpose
         self.discounted_rewards = np.asarray(discounted_rewards[::-1]).transpose([1,0])
