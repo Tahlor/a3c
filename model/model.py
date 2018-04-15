@@ -72,12 +72,13 @@ class Model:
         self.actions_op = None
         self.value_op = None
         self.loss_op = None
-        self.optimizer = tf.train.RMSPropOptimizer(0.00025, 0.99, 0.0, 1e-6)
+        # learning_rate = 0.00025
+        self.optimizer = tf.train.RMSPropOptimizer(learning_rate = .00025, decay=0.99, momentum=0.0, epsilon=1e-6)
         self.saver = None
         self.trainable = trainable
         self.graph = tf.Graph()
         self.discount = discount
-        self.entropy_weight = 1e-4 * 0
+        self.entropy_weight = 1e-4
         self.naive = naive
         self.network_output = None
         self.build_network()
@@ -178,7 +179,8 @@ class Model:
             action_dist = tf.contrib.distributions.Normal(self.action_mu, self.action_sd) # [batch, t, # of actions]
 
             # Get log prob given chosen actions -- this range goes in both directions...
-            log_prob = action_dist.log_prob(self.chosen_actions) # probability < 1 , so negative value here, [batch, t, # of actions]
+            #log_prob = action_dist.log_prob(self.chosen_actions) # probability < 1 , so negative value here, [batch, t, # of actions]
+            log_prob = tf.log(tf.nn.sigmoid(action_dist.prob(self.chosen_actions)))
 
             # Calculate entropy
             # use absolute value of action_mu so it doesn't go negative and blow up the log,
@@ -207,11 +209,11 @@ class Model:
             advantage = self.policy_advantage # self.advantage is dynamic, we feed in self.policy_advantage
             #self.assert_op = tf.Assert(tf.less_equal(tf.reduce_max(log_prob), 1.), [log_prob])
             self.assert_op = tf.Assert(True, [True])
-            self.policy_loss =  -tf.reduce_mean(log_prob * advantage + entropy * self.entropy_weight) # policy advantage [batch, t]
+            self.policy_loss = -tf.reduce_mean(log_prob * advantage + entropy * self.entropy_weight) # policy advantage [batch, t]
             self.policy_grads_and_vars = self.optimizer.compute_gradients(self.policy_loss)
             self.policy_grads_and_vars = [[grad, var] for grad, var in self.policy_grads_and_vars if grad is not None]
             self.policy_train_op = self.optimizer.apply_gradients(self.policy_grads_and_vars, global_step=tf.train.get_global_step())
-            #self.policy_train_op = tf.Variable([0])
+            self.policy_train_op = tf.Variable([0])
             self.policy_loss_summary = tf.summary.scalar('policy_loss_summary', self.policy_loss)
             self.policy_dict = {"entropy":entropy, "log_prob": log_prob, "policy_loss":self.policy_loss, "mess":mess, "actions": self.action_mu, "output_list": self.output_list}
 
@@ -222,8 +224,6 @@ class Model:
             #self.value_losses = (self.value_op - self.discounted_rewards)**2
             self.value_losses = tf.squared_difference(self.value_op, self.discounted_rewards)
             self.value_loss = tf.reduce_mean(self.value_losses, name="value_loss")
-
-            #self.optimizer = tf.train.AdamOptimizer(1e-4)
             self.value_grads_and_vars = self.optimizer.compute_gradients(self.value_loss)
             self.value_grads_and_vars = [[grad, var] for grad, var in self.value_grads_and_vars if grad is not None]
             self.value_train_op = self.optimizer.apply_gradients(self.value_grads_and_vars, global_step=tf.train.get_global_step())

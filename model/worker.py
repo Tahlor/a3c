@@ -113,7 +113,7 @@ class Worker(Thread):
             self.exchange.get_next_state() # go to next state to find reward of that move
             current_value = self.exchange.get_value()
             self.portfolio_values.append(current_value)
-            R = current_value - previous_value
+            R = max(current_value - previous_value, 0)
 
             # Record actions
             chosen_actions.append(chosen_action)
@@ -220,11 +220,12 @@ class Worker(Thread):
         self.discounted_rewards = np.asarray(discounted_rewards[::-1]).transpose([1,0])
         self.policy_advantage = np.asarray(policy_advantage[::-1]).transpose([1,0])
 
-        if self.global_step % 1000==0:
-            #sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
+        if self.global_step % 3000==0 and False:
+            print("NEW RUN")
+            sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
             pass
 
-        if self.global_step % 100 == 0:
+        if False and self.global_step % 100 == 0:
             print(self.portfolio_values)
             print(self.rewards)
             print(self.discounted_rewards)
