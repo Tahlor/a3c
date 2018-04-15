@@ -9,9 +9,11 @@ sys.path.append("..")
 # import model.value
 # import model.policy
 LR = .00025
+#LR = .001
 ENTROPY_WT = 1e-2
 MAIN_INITIALIZER = tfcl.variance_scaling_initializer()
-MAIN_INITIALIZER = tf.random_normal_initializer(0., .1)
+#MAIN_INITIALIZER = tf.random_normal_initializer(0., .1)
+DISCOUNT = .7
 
 #tfcl.variance_scaling_initializer()
 #tf.ones_initializer()
@@ -60,7 +62,7 @@ def get_gru(num_layers, state_dim, reuse=False):
     return gru_cells
 
 class Model:
-    def __init__(self, batch_size=1, inputs_per_time_step=2, seq_length=1000, num_layers=1, layer_size=32, trainable = True, discount = .3, naive=False):
+    def __init__(self, batch_size=1, inputs_per_time_step=2, seq_length=1000, num_layers=1, layer_size=32, trainable = True, discount = DISCOUNT, naive=False):
         self.seq_length = seq_length
         self.batch_size = batch_size
         if not naive:
@@ -192,7 +194,7 @@ class Model:
                 #log_prob = tf.minimum(action_dist.log_prob(self.chosen_actions), .99) # probability < 1 , so negative value here, [batch, t, # of actions]
                 #log_prob = tf.log(tf.minimum(action_dist.prob(self.chosen_actions), .99))
                 #log_prob = tf.log(action_dist.prob(self.chosen_actions))
-            log_prob = action_dist.log_prob(self.chosen_actions)
+            log_prob = tf.minimum(action_dist.log_prob(self.chosen_actions), -1e-2) # make this be < 0
 
             # Calculate entropy
             # use absolute value of action_mu so it doesn't go negative and blow up the log,

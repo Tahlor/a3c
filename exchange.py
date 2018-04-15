@@ -118,7 +118,7 @@ class Exchange:
                 state_range = [self.state, self.state + self.game_length]  # generate price changes for game
         backsteps = min(distance, state_range[0]) # can't go before beginning of time
         state_range = [x - backsteps for x in state_range]
-        price_changes = np.log(self.data[slice(*state_range)]["price"].astype('float64')*1.0)*100 #np.log
+        price_changes = np.log(self.data[slice(*state_range)]["price"].astype('float64')*1.0) #np.log
         # print(type(price_changes))
         price_changes = price_changes[distance:] - price_changes[:-distance]
 

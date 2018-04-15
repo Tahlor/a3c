@@ -147,7 +147,7 @@ class Worker(Thread):
 
             # Add graph
             # self.summary_writer.add_graph(self.summary_writer.graph)
-
+            print(self.exchange.vanilla_prices[1000:1010])
             try:
                 while not coord.should_stop():
                     count_string = str(self.T)
@@ -178,9 +178,9 @@ class Worker(Thread):
                     self.summary_writer.add_summary (self.log_scalar("portfolio", portfolio_value, self.global_step), self.global_step)
 
 
-                    if int(count_string) % 100 == 0:
+                    if int(count_string) % 1000 == 0:
                         print("Finished step #{}, net worth {}, value loss {}, policy loss {}".format(int(count_string), self.exchange.get_value(), self.value_loss, self.policy_loss))
-                        print("A Mu {}, A SD {}, An action {}".format(self.policy_loss_dict["actions"][0][0][0], self.policy_loss_dict["sds"][0][0][0],  self.chosen_actions[0][0][0]))
+                        print("A Mu {}, A SD {}, An action {}".format(self.policy_loss_dict["actions"][0,:,0], self.policy_loss_dict["sds"][0,:,0],  self.chosen_actions[0,:,0]))
                         #print("Actions {}".format(self.chosen_actions))
                         #print("Action Mus {}".format(self.policy_loss_dict["actions"]))
                         #print("Action SDs {}".format(self.policy_loss_dict["sds"]))
