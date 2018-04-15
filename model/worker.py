@@ -97,15 +97,15 @@ class Worker(Thread):
             input_tensor = self.exchange.get_model_input(price_range=[starting_state, starting_state + self.t_max], exogenous=True)  # GAME LENGTH X INPUT SIZE
 
         self.input_tensor = input_tensor
-        self.actions, self.state_sequence, self.values = self.model.get_actions_states_values(sess, input_tensor, self.initial_gru_state)  # returns GAME LENGTH X 1 X 2 [-1 to 1, sd]
+        self.action_mu, self.action_sd, self.state_sequence, self.values = self.model.get_actions_states_values(sess, input_tensor, self.initial_gru_state)  # returns GAME LENGTH X 1 X 2 [-1 to 1, sd]
         # final_state = [batch size, 256]
 
         #print(self.actions)
         for i in range(0, self.t_max):
             # get action prediction
-            action = self.actions[:, i, 0] # batch_size x 2
-            mean = action[0][0]
-            sd = action[0][1]
+            #print(self.action_mu.shape)
+            mean = self.action_mu[0,i,0] # BATCH, SEQ, # OF ACTIONS
+            sd = self.action_sd[0,i,0]
             #print(mean, sd)
             chosen_action = self.exchange.interpret_action(mean, sd)
             #print(chosen_action)
@@ -180,9 +180,10 @@ class Worker(Thread):
 
                     if int(count_string) % 100 == 0:
                         print("Finished step #{}, net worth {}, value loss {}, policy loss {}".format(int(count_string), self.exchange.get_value(), self.value_loss, self.policy_loss))
-                        print("Actions {}".format(self.chosen_actions))
-                        print("Action Mus {}".format(self.policy_loss_dict["actions"]))
-                        print("Action SDs {}".format(self.policy_loss_dict["sds"]))
+                        print("A Mu {}, A SD {}, An action {}".format(self.policy_loss_dict["actions"][0][0][0], self.policy_loss_dict["sds"][0][0][0],  self.chosen_actions[0][0][0]))
+                        #print("Actions {}".format(self.chosen_actions))
+                        #print("Action Mus {}".format(self.policy_loss_dict["actions"]))
+                        #print("Action SDs {}".format(self.policy_loss_dict["sds"]))
 
                         #print("Network out {}".format(self.policy_loss_dict["output_list"][0,0:10]))
 

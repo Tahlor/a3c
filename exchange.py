@@ -231,6 +231,7 @@ class Exchange:
         buy_sell = self.data[:]["side"][buy_sell_indices] [None,...] # add a batch dimension
         input = np.concatenate((prices,buy_sell), 2) #[1 (batches x seq length x prev_states * 2)] ; 2 is for prices and sides
         basic = np.asarray(self.vanilla_prices[self.state:self.state+self.game_length]).reshape([1,-1,1])
+        basic = (basic - np.mean(basic))/(np.max(basic)-np.min(basic)) # normalize
         return basic
 
     # same as above, but can optionally define a list [0,10,50,100] of previous time steps, or a function
@@ -316,8 +317,8 @@ class Exchange:
     def interpret_action(self, action, sd, continuous = True):
         # this normalizes action to [min, max]
         if continuous:
-            action = 2*(action-np.average(self.actions))/(max(self.actions)-min(self.actions))
-            raw_action = self.sample_from_action(action, abs(sd))
+            # action = 2*(action-np.average(self.actions))/(max(self.actions)-min(self.actions))
+            raw_action = self.sample_from_action(action, sd)
         action = round( min(max(raw_action, -1), 1), 2) # round off, put action in acceptable range
 
         # Margin call

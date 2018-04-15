@@ -162,7 +162,7 @@ class Model:
 
             self.actions_op = tf.reshape(actions_raw, [self.batch_size, self.seq_length, self.number_of_actions, 2])
             self.action_mu = tf.nn.sigmoid(self.actions_op[:, :, :, 0])-.5 # something from -.5 to .5
-            self.action_sd = tf.nn.softplus(self.actions_op[:, :, :, 1]) + 1e-3 # this should not be 0
+            self.action_sd = tf.minimum(tf.nn.softplus(self.actions_op[:, :, :, 1]) + 1e-3,1) # this should not be 0; it doesn't need to be bigger than 1
 
             self.saver = tf.train.Saver()
 
@@ -256,10 +256,10 @@ class Model:
     def get_actions_states_values(self, sess, input_tensor, gru_state):
         states = [[]]
         if self.naive:
-            actions, values = sess.run([self.actions_op, self.value_op], feed_dict={self.inputs_ph: input_tensor})
+            action_mus, action_sds, values = sess.run([self.action_mu, self.action_sd, self.value_op], feed_dict={self.inputs_ph: input_tensor})
         else:
-            actions, states, values = sess.run([self.actions_op, self.network_output, self.value_op], feed_dict={self.inputs_ph: input_tensor, self.gru_state_ph: gru_state})
-        return actions, tuple(states[0]), values
+            action_mus, action_sds, states, values = sess.run([self.action_mu, self.action_sd, self.network_output, self.value_op], feed_dict={self.inputs_ph: input_tensor, self.gru_state_ph: gru_state})
+        return action_mus, action_sds, tuple(states[0]), values
 
     def get_state(self):
         return self.last_input_state, self.gru_state_ph
