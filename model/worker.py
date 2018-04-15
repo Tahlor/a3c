@@ -75,6 +75,7 @@ class Worker(Thread):
         self.exchange.goto_state(starting_state)
         chosen_actions = []
         rewards = []
+        self.prices = []
         self.portfolio_values = []
         # Prime e.g. LSTM
 
@@ -108,15 +109,18 @@ class Worker(Thread):
             #print(mean, sd)
             chosen_action = self.exchange.interpret_action(mean, sd)
             #print(chosen_action)
+            self.prices.append(self.exchange.current_price)
+            self.exchange.get_next_state() # go to next state to find reward of that move
             current_value = self.exchange.get_value()
             self.portfolio_values.append(current_value)
             R = current_value - previous_value
+
             # Record actions
             chosen_actions.append(chosen_action)
             rewards.append(R)
-            previous_value = self.exchange.get_value()
-            self.exchange.get_next_state()
+            previous_value = current_value
             #self.exchange.get_status()
+
         self.chosen_actions = np.asarray(chosen_actions).reshape([self.model.batch_size, self.t_max, self.model.number_of_actions])
         self.rewards = np.asarray(rewards)
 
@@ -200,7 +204,7 @@ class Worker(Thread):
         discounted_rewards = []
         policy_advantage = []
 
-        rewards_swapped = np.transpose(self.rewards[::-1], [1,0]) # swap batch and seq axes, so SEX X BATCH; also reverse
+        rewards_swapped = np.transpose(self.rewards[::-1], [1,0]) # swap batch and seq axes, so SEX X BATCH; also reverse;
         values_swapped = np.transpose(self.values[::-1], [1, 0])
 
         # Copmletely ignore the stupid value net
@@ -220,7 +224,7 @@ class Worker(Thread):
             #sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
             pass
 
-        if self.global_step % 100 == 0 and False:
+        if self.global_step % 100 == 0:
             print(self.portfolio_values)
             print(self.rewards)
             print(self.discounted_rewards)

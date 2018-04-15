@@ -57,7 +57,7 @@ def get_gru(num_layers, state_dim, reuse=False):
     return gru_cells
 
 class Model:
-    def __init__(self, batch_size=1, inputs_per_time_step=2, seq_length=1000, num_layers=1, layer_size=32, trainable = True, discount = .9, naive=False):
+    def __init__(self, batch_size=1, inputs_per_time_step=2, seq_length=1000, num_layers=1, layer_size=32, trainable = True, discount = .8, naive=False):
         self.seq_length = seq_length
         self.batch_size = batch_size
         if not naive:
