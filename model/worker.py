@@ -166,7 +166,7 @@ class Worker(Thread):
 
                     #print("Playing game for {} turns".format(self.t_max))
                     starting_state = np.random.randint(*self.exchange.state_range)
-                    self.play_game2(sess, starting_state=10)
+                    self.play_game2(sess, starting_state=1000)
 
                     # Update the global ne  tworks
                     #print("Updating parameters")
@@ -206,7 +206,7 @@ class Worker(Thread):
         discounted_rewards = []
         policy_advantage = []
 
-        rewards_swapped = np.transpose(self.rewards[::-1], [1,0]) # swap batch and seq axes, so SEX X BATCH; also reverse;
+        rewards_swapped = np.transpose(self.rewards[::-1], [1,0]) # swap batch and seq axes, so SEQ X BATCH; also reverse;
         values_swapped = np.transpose(self.values[::-1], [1, 0])
 
         # Copmletely ignore the stupid value net
