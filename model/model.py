@@ -11,9 +11,10 @@ sys.path.append("..")
 LR = .00025
 #LR = .001
 ENTROPY_WT = 1e-2
-MAIN_INITIALIZER = tfcl.variance_scaling_initializer()
-#MAIN_INITIALIZER = tf.random_normal_initializer(0., .1)
+#MAIN_INITIALIZER = tfcl.variance_scaling_initializer()
+MAIN_INITIALIZER = tf.random_normal_initializer(0., .01)
 DISCOUNT = .7
+A_BOUND = [0,1]
 
 #tfcl.variance_scaling_initializer()
 #tf.ones_initializer()
@@ -62,13 +63,16 @@ def get_gru(num_layers, state_dim, reuse=False):
     return gru_cells
 
 class Model:
-    def __init__(self, batch_size=1, inputs_per_time_step=2, seq_length=1000, num_layers=1, layer_size=32, trainable = True, discount = DISCOUNT, naive=False):
+    def __init__(self, batch_size=1, inputs_per_time_step=2, seq_length=1000, num_layers=1, layer_size=64, trainable = True,
+                 discount = DISCOUNT, naive=False, fixed_sd = 0):
         self.seq_length = seq_length
         self.batch_size = batch_size
+        self.fixed_sd = fixed_sd
+        self.inputs_per_time_step = inputs_per_time_step
         if not naive:
             self.input_size = inputs_per_time_step * seq_length
         else:
-            self.input_size = 1 #inputs_per_time_step
+            self.input_size = inputs_per_time_step
         self.num_layers = num_layers
         self.layer_size = layer_size
         self.number_of_actions = 1
@@ -97,7 +101,8 @@ class Model:
         output_list = tf.contrib.layers.fully_connected(temp_inputs, self.layer_size,
                                                         weights_initializer=MAIN_INITIALIZER,
                                                         biases_initializer=tf.zeros_initializer(),
-                                                        scope=name)  # this is just a 256 node network instead of GRU
+                                                        scope=name, activation_fn=tf.nn.relu6)  # this is just a 256 node network instead of GRU
+        # output_list = [batch * seq X 256]
         output_list = tf.reshape(output_list, [self.batch_size, self.seq_length, -1])
         return output_list
 
@@ -163,8 +168,13 @@ class Model:
                 self.value_op = fc_list(self.output_list, 1, name='value', activation=None, scope="value_fc")
 
             self.actions_op = tf.reshape(actions_raw, [self.batch_size, self.seq_length, self.number_of_actions, 2])
-            self.action_mu = tf.nn.sigmoid(self.actions_op[:, :, :, 0])-.5 # something from -.5 to .5
-            self.action_sd = tf.minimum(tf.nn.softplus(self.actions_op[:, :, :, 1]) + 1e-3,1) # this should not be 0; it doesn't need to be bigger than 1
+            self.action_mu = tf.nn.sigmoid(self.actions_op[:, :, :, 0]) # something from -.5 to .5
+            self.action_sd = tf.nn.softplus(self.actions_op[:, :, :, 1] + 1e-4) # this should not be 0; it doesn't need to be bigger than 1
+
+            self.action_dist = tf.contrib.distributions.Normal(self.action_mu, self.action_sd)
+            self.actions = tf.clip_by_value(tf.squeeze(self.action_dist.sample([self.batch_size]), axis=0), A_BOUND[0], A_BOUND[1])  # sample a action from distribution
+
+            #self.action_sd = tf.minimum(tf.nn.softplus(self.actions_op[:, :, :, 1]) + 1e-3,1) # this should not be 0; it doesn't need to be bigger than 1
 
             self.saver = tf.train.Saver()
 
@@ -181,7 +191,9 @@ class Model:
 
             # Vector of continuous probabilites for each action
             # Vector of covariances for each action
-            action_dist = tf.contrib.distributions.Normal(self.action_mu, self.action_sd) # [batch, t, # of actions]
+            sd = self.fixed_sd if self.fixed_sd else self.action_sd
+            # action_dist = tf.contrib.distributions.Normal(self.action_mu, self.action_sd) # [batch, t, # of actions]
+            action_dist = self.action_dist
 
             # Get log prob given chosen actions -- this range goes in both directions...
             if False:
@@ -194,7 +206,16 @@ class Model:
                 #log_prob = tf.minimum(action_dist.log_prob(self.chosen_actions), .99) # probability < 1 , so negative value here, [batch, t, # of actions]
                 #log_prob = tf.log(tf.minimum(action_dist.prob(self.chosen_actions), .99))
                 #log_prob = tf.log(action_dist.prob(self.chosen_actions))
-            log_prob = tf.minimum(action_dist.log_prob(self.chosen_actions), -1e-2) # make this be < 0
+
+            # Handle negative rewards
+            advantage = abs(self.policy_advantage)*10
+            log_prob1 = action_dist.log_prob(self.chosen_actions)
+            if True:
+                neg_rwd_mask = (tf.sign(self.policy_advantage)-1)/2 # 0 for pos, -1 for neg
+                prob = tf.minimum(action_dist.prob(self.chosen_actions), .99) # outputs (0,1]
+                log_prob1 = tf.log(abs(prob+neg_rwd_mask)) # invert probabilities with negative rewards (e.g. 99% becomes 1%); outputs (-inf, 0)
+
+            log_prob = tf.minimum(log_prob1, -1e-3) # make this be < 0
 
             # Calculate entropy
             # use absolute value of action_mu so it doesn't go negative and blow up the log,
@@ -215,15 +236,7 @@ class Model:
             #  e.g. even if an OK path is found at first, high entropy => higher loss, so it will take
             #   that good path with a grain of salt
 
-            # policy_advantage is negative, log_prob is positive
-
-            ## Dynamic advantage
-            #self.advantage = self.value_op - self.discounted_rewards
-
-            advantage = self.policy_advantage # self.advantage is dynamic, we feed in self.policy_advantage
-            #self.assert_op = tf.Assert(tf.less_equal(tf.reduce_max(log_prob), 1.), [log_prob])
             self.assert_op = tf.Assert(True, [True])
-
             ## Loss = unlikely choices with high payoffs + some noise
             ## Need to add likely choices with negative payoffs
 
@@ -258,10 +271,10 @@ class Model:
     def get_actions_states_values(self, sess, input_tensor, gru_state):
         states = [[]]
         if self.naive:
-            action_mus, action_sds, values = sess.run([self.action_mu, self.action_sd, self.value_op], feed_dict={self.inputs_ph: input_tensor})
+            action_mus, action_sds, actions, values = sess.run([self.action_mu, self.action_sd, self.actions, self.value_op], feed_dict={self.inputs_ph: input_tensor})
         else:
-            action_mus, action_sds, states, values = sess.run([self.action_mu, self.action_sd, self.network_output, self.value_op], feed_dict={self.inputs_ph: input_tensor, self.gru_state_ph: gru_state})
-        return action_mus, action_sds, tuple(states[0]), values
+            action_mus, action_sds, actions, states, values = sess.run([self.action_mu, self.action_sd, self.actions, self.network_output, self.value_op], feed_dict={self.inputs_ph: input_tensor, self.gru_state_ph: gru_state})
+        return action_mus, action_sds, actions, tuple(states[0]), values
 
     def get_state(self):
         return self.last_input_state, self.gru_state_ph

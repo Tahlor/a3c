@@ -31,7 +31,8 @@ DATA = ".\data\BTC_USD_100_FREQ.npy"
 # time_interval - each state is a X second period
 
 class Exchange:
-    def __init__(self, data_stream, game_length, cash = 10000, holdings = 0, actions = [-1,1], time_interval = None, transaction_cost = 0, permit_short = False):
+    def __init__(self, data_stream, game_length, cash = 10000, holdings = 0, actions = [-1,1], time_interval = None,
+                 transaction_cost = 0, permit_short = False, naive_inputs = 3, naive_price_history =3):
 
         '''
         Expects a list of dictionaries with the key price
@@ -41,8 +42,9 @@ class Exchange:
                 3. maybe get order book?
         '''
         # Game parameters
-        self.number_of_input_prices_for_basic = 10
-        self.number_of_inputs_for_basic = self.number_of_input_prices_for_basic # *2 # for prices and positions
+        self.number_of_input_types = naive_inputs
+        self.number_of_input_prices_for_basic = naive_price_history
+        self.total_number_of_inputs_for_basic = self.number_of_input_prices_for_basic * naive_inputs # for prices and positions
         self.game_length = game_length
         self.naive_sample_pattern = [2**x for x in range(2,2+self.number_of_input_prices_for_basic)] # for naive model, which previous prices to look at;
         # will be the len of the number of input prices, we'll add the 0 later
@@ -227,12 +229,15 @@ class Exchange:
         # this uses current state
 
         prices = self.get_price_history(freq=self.naive_sample_pattern, batch= True, )[None,...]
-        buy_sell_indices = self.get_batch_price_indices(state_range = None, freq=self.naive_sample_pattern, ) [:,:-1] # n-1 in prices since using the difference
-        buy_sell = self.data[:]["side"][buy_sell_indices] [None,...] # add a batch dimension
-        input = np.concatenate((prices,buy_sell), 2) #[1 (batches x seq length x prev_states * 2)] ; 2 is for prices and sides
-        basic = np.asarray(self.vanilla_prices[self.state:self.state+self.game_length]).reshape([1,-1,1])
-        basic = (basic - np.mean(basic))/(np.max(basic)-np.min(basic)) # normalize
-        return basic
+        if self.number_of_input_types == 2:
+            buy_sell_indices = self.get_batch_price_indices(state_range = None, freq=self.naive_sample_pattern, ) [:,:-1] # n-1 in prices since using the difference
+            buy_sell = self.data[:]["side"][buy_sell_indices] [None,...] # add a batch dimension
+            input = np.concatenate((prices,buy_sell), 2) #[1 (batches x seq length x prev_states * 2)] ; 2 is for prices and sides
+        else:
+            input = prices
+        #basic = np.asarray(self.vanilla_prices[self.state:self.state+self.game_length]).reshape([1,-1,1])
+        #basic = (basic - np.mean(basic)) #/(np.max(basic)-np.min(basic)) # normalize
+        return input
 
     # same as above, but can optionally define a list [0,10,50,100] of previous time steps, or a function
     def get_price_history_func(self, current_id = None, n = 100, pattern=lambda x: x**2):
@@ -314,11 +319,13 @@ class Exchange:
     def get_perc_change(self):
         return self.current_price/self.data[self.state-1]["price"]
 
-    def interpret_action(self, action, sd, continuous = True):
+    def interpret_action(self, action, sd, continuous = True, sample = True):
         # this normalizes action to [min, max]
+        raw_action = action
         if continuous:
             # action = 2*(action-np.average(self.actions))/(max(self.actions)-min(self.actions))
-            raw_action = self.sample_from_action(action, sd)
+            if sample:
+                raw_action = self.sample_from_action(action, sd)
         action = round( min(max(raw_action, -1), 1), 2) # round off, put action in acceptable range
 
         # Margin call

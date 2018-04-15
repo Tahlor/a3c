@@ -20,6 +20,8 @@ BTC = 0
 DATA = r"./data/BTC-USD_SHORT.npy"
 DATA = r"./data/BTC_USD_100_FREQ.npy"
 
+EXPERIMENT = True
+
 # Each worker needs his own exchange -- needs to be some coordination to explore the exchange
 # Train should have some logic to randomly move around the reinforcement space?
 # Make some toy data
@@ -46,7 +48,7 @@ class Worker(Thread):
         self.summary_writer = summary_writer
 
         # Each worker has an exchange; can be reset to any state
-        self.exchange = Exchange(data, time_interval=1, game_length=self.t_max)
+        self.exchange = Exchange(data, time_interval=1, game_length=self.t_max, naive_price_history=self.model.input_size,naive_inputs=self.model.inputs_per_time_step )
 
 
         # create thread-specific copy of global parameters
@@ -79,6 +81,9 @@ class Worker(Thread):
         self.portfolio_values = []
         # Prime e.g. LSTM
 
+        if EXPERIMENT:
+            self.model.discount = 0
+
         if self.naive:
 
             input_tensor = self.exchange.get_model_input_naive() # BATCH X SEQ X (Price, Side)
@@ -97,24 +102,36 @@ class Worker(Thread):
             input_tensor = self.exchange.get_model_input(price_range=[starting_state, starting_state + self.t_max], exogenous=True)  # GAME LENGTH X INPUT SIZE
 
         self.input_tensor = input_tensor
-        self.action_mu, self.action_sd, self.state_sequence, self.values = self.model.get_actions_states_values(sess, input_tensor, self.initial_gru_state)  # returns GAME LENGTH X 1 X 2 [-1 to 1, sd]
+        self.action_mu, self.action_sd, self.actions, self.state_sequence, self.values = self.model.get_actions_states_values(sess, input_tensor, self.initial_gru_state)  # returns GAME LENGTH X 1 X 2 [-1 to 1, sd]
         # final_state = [batch size, 256]
 
         #print(self.actions)
         for i in range(0, self.t_max):
             # get action prediction
             #print(self.action_mu.shape)
-            mean = self.action_mu[0,i,0] # BATCH, SEQ, # OF ACTIONS
+            mean = self.action_mu[0,i,0]-.5 # BATCH, SEQ, # OF ACTIONS
             sd = self.action_sd[0,i,0]
             #print(mean, sd)
-            chosen_action = self.exchange.interpret_action(mean, sd)
+            if self.model.fixed_sd:
+                print("FIXED SD")
+                sd = self.model.fixed_sd
+
+            if EXPERIMENT:
+                mean = self.action_mu[0,i,0]+.5 # ONLY BUY STUFF
+
+            # Sample
+            #print(self.actions.shape) # batch X SEQ x # of actions
+            mean = self.actions[0,i,0]
+            chosen_action = self.exchange.interpret_action(mean, sd, sample = False)
             #print(chosen_action)
             self.prices.append(self.exchange.current_price)
             self.exchange.get_next_state() # go to next state to find reward of that move
             current_value = self.exchange.get_value()
             self.portfolio_values.append(current_value)
-            R = max(current_value - previous_value, 0)
+            R = current_value - previous_value
 
+            if EXPERIMENT: # sell everything every round
+                self.exchange.interpret_action(-1, 0, sample = False)
             # Record actions
             chosen_actions.append(chosen_action)
             rewards.append(R)
@@ -147,7 +164,10 @@ class Worker(Thread):
 
             # Add graph
             # self.summary_writer.add_graph(self.summary_writer.graph)
+            self.exchange.goto_state(1000)
             print(self.exchange.vanilla_prices[1000:1010])
+            if self.naive:
+                print(self.exchange.get_model_input_naive())
             try:
                 while not coord.should_stop():
                     count_string = str(self.T)
@@ -178,9 +198,11 @@ class Worker(Thread):
                     self.summary_writer.add_summary (self.log_scalar("portfolio", portfolio_value, self.global_step), self.global_step)
 
 
-                    if int(count_string) % 1000 == 0:
+                    if int(count_string) % 100 == 0:
                         print("Finished step #{}, net worth {}, value loss {}, policy loss {}".format(int(count_string), self.exchange.get_value(), self.value_loss, self.policy_loss))
-                        print("A Mu {}, A SD {}, An action {}".format(self.policy_loss_dict["actions"][0,:,0], self.policy_loss_dict["sds"][0,:,0],  self.chosen_actions[0,:,0]))
+                        #print("A Mu {}, A SD {}, An action {}".format(self.policy_loss_dict["actions"][0,:,0], self.policy_loss_dict["sds"][0,:,0],  self.chosen_actions[0,:,0]))
+                        print("A Mu {}, A SD {}, An action {}".format(self.policy_loss_dict["actions"][0,0:2,0], self.policy_loss_dict["sds"][0,0:2,0],  self.chosen_actions[0,0:2,0]))
+
                         #print("Actions {}".format(self.chosen_actions))
                         #print("Action Mus {}".format(self.policy_loss_dict["actions"]))
                         #print("Action SDs {}".format(self.policy_loss_dict["sds"]))

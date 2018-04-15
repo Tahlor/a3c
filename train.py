@@ -33,14 +33,35 @@ EPOCHS = 10000
 MODEL_DIR = "../tmp/"
 NUM_INPUTS = 2
 TAYLOR = False
+SHARED_NETWORK_SIZE = 64
+FIXED_SD = 0
+NAIVE_LOOKBACK = 3
+
+# Prime GRU once, run e.g. 10 instances on that
 
 if os.environ["COMPUTERNAME"] == 'DALAILAMA':
-    DATA = ".\data\BTC_USD_100_FREQ.npy"
-    NAIVE_M0DEL = True
-    GAME_MAX_LENGTH = 10
-    EPOCHS = 100000
-    MODEL_DIR = "./tmp"
     TAYLOR = True
+
+    if True: # NAIVE
+        DATA = ".\data\BTC_USD_100_FREQ.npy"
+        NAIVE_M0DEL = True
+        GAME_MAX_LENGTH = 10
+        EPOCHS = 100000
+        NUM_INPUTS = 1
+        NAIVE_LOOKBACK = 3
+        MODEL_DIR = "./tmp"
+        SHARED_NETWORK_SIZE = 16
+        FIXED_SD = 0
+    else: # GRU
+        DATA = ".\data\BTC_USD_100_FREQ.npy"
+        NAIVE_M0DEL = False
+        GAME_MAX_LENGTH = 100
+        EPOCHS = 100000
+        MODEL_DIR = "../tmp/"
+        NUM_INPUTS = 2
+        SHARED_NETWORK_SIZE = 64
+        FIXED_SD = 0
+        NAIVE_LOOKBACK = 3
 
 tf.flags.DEFINE_string("model_dir", MODEL_DIR, "Directory to write Tensorboard summaries and videos to.")
 tf.flags.DEFINE_string("env", "exchange_v1.0", "Name of game")
@@ -50,9 +71,12 @@ tf.flags.DEFINE_integer("eval_every", 300, "Evaluate the policy every N seconds"
 tf.flags.DEFINE_boolean("reset", False, "If set, delete the existing model directory and start training from scratch.")
 tf.flags.DEFINE_integer("parallelism", None, "Number of threads to run. If not set we run [num_cpu_cores] threads.")
 tf.flags.DEFINE_boolean("naive", NAIVE_M0DEL, "Use naive MLP.")
-tf.flags.DEFINE_integer("naive_lookback", 10, "Number of back prices to look at.")
+tf.flags.DEFINE_integer("naive_lookback", NAIVE_LOOKBACK, "Number of back prices to look at.")
 tf.flags.DEFINE_integer("num_input_types", NUM_INPUTS, "E.g. prices, side, timestampe etc.")
 tf.flags.DEFINE_string("data_path", DATA, "Path to .npy input file")
+tf.flags.DEFINE_integer("network_size", SHARED_NETWORK_SIZE, "# of GRU/FC cells/nodes")
+tf.flags.DEFINE_integer("fixed_sd", FIXED_SD, "Set SD instead of learning it")
+
 FLAGS = tf.flags.FLAGS
 
 # Set the number of workers
@@ -81,7 +105,8 @@ if not os.path.exists(train_dir):
 # saver = tf.train.Saver(keep_checkpoint_every_n_hours=0.5, max_to_keep=3)
 
 # Initialize model (value and policy nets)
-m = Model(seq_length=FLAGS.t_max, naive=FLAGS.naive, inputs_per_time_step=(FLAGS.naive_lookback * FLAGS.num_input_types if FLAGS.naive else FLAGS.num_input_types))
+m = Model(seq_length=FLAGS.t_max, naive=FLAGS.naive, inputs_per_time_step=(FLAGS.naive_lookback * FLAGS.num_input_types if FLAGS.naive else FLAGS.num_input_types),
+          layer_size=FLAGS.network_size, fixed_sd = FLAGS.fixed_sd)
 
 # Keep track of steps
 global_step = tf.Variable(0, name="global_step", trainable=False)
