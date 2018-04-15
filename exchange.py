@@ -304,6 +304,9 @@ class Exchange:
     def get_value(self):
         return self.cash + self.holdings*self.current_price
 
+    def get_perc_cash(self):
+        return self.cash/self.get_value()
+
     # maybe feed absolute price and price % change from previous state
     def get_perc_change(self):
         return self.current_price/self.data[self.state-1]["price"]
@@ -312,8 +315,8 @@ class Exchange:
         # this normalizes action to [min, max]
         if continuous:
             action = 2*(action-np.average(self.actions))/(max(self.actions)-min(self.actions))
-            action = self.sample_from_action(action, abs(sd))
-        action = round(action, 2)
+            raw_action = self.sample_from_action(action, abs(sd))
+        action = round(raw_action, 2)
 
         # Margin call
         if self.permit_short and self.get_value() < self.margin_call*self.starting_cash and self.holdings < 0:
@@ -330,7 +333,7 @@ class Exchange:
             self.buy_security(currency = self.cash * abs(action))
         #print(action)
         #print(self.get_status(), action)
-        return action
+        return raw_action # don't tell the model we rounded the recommendation
 
     def sample_from_action(self, mean = 0, sd = 1):
         sample = np.random.normal(mean, sd)
