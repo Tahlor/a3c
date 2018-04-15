@@ -8,8 +8,11 @@ import numpy as np
 sys.path.append("..")
 # import model.value
 # import model.policy
-LR = .001 #.00025
+LR = .00025
+ENTROPY_WT = 1e-2
 MAIN_INITIALIZER = tfcl.variance_scaling_initializer()
+MAIN_INITIALIZER = tf.random_normal_initializer(0., .1)
+
 #tfcl.variance_scaling_initializer()
 #tf.ones_initializer()
 
@@ -57,7 +60,7 @@ def get_gru(num_layers, state_dim, reuse=False):
     return gru_cells
 
 class Model:
-    def __init__(self, batch_size=1, inputs_per_time_step=2, seq_length=1000, num_layers=1, layer_size=32, trainable = True, discount = .8, naive=False):
+    def __init__(self, batch_size=1, inputs_per_time_step=2, seq_length=1000, num_layers=1, layer_size=32, trainable = True, discount = .3, naive=False):
         self.seq_length = seq_length
         self.batch_size = batch_size
         if not naive:
@@ -78,7 +81,7 @@ class Model:
         self.trainable = trainable
         self.graph = tf.Graph()
         self.discount = discount
-        self.entropy_weight = 1e-3
+        self.entropy_weight = ENTROPY_WT
         self.naive = naive
         self.network_output = None
         self.build_network()
@@ -158,8 +161,8 @@ class Model:
                 self.value_op = fc_list(self.output_list, 1, name='value', activation=None, scope="value_fc")
 
             self.actions_op = tf.reshape(actions_raw, [self.batch_size, self.seq_length, self.number_of_actions, 2])
-            self.action_mu = tf.subtract(self.actions_op[:, :, :, 0], .5) # something from -.5 to .5
-            self.action_sd = tf.nn.softplus(self.actions_op[:, :, :, 1]) + 1e-2 # this should not be 0
+            self.action_mu = tf.nn.sigmoid(self.actions_op[:, :, :, 0])-.5 # something from -.5 to .5
+            self.action_sd = tf.nn.softplus(self.actions_op[:, :, :, 1]) + 1e-3 # this should not be 0
 
             self.saver = tf.train.Saver()
 
@@ -180,12 +183,16 @@ class Model:
 
             # Get log prob given chosen actions -- this range goes in both directions...
             if False:
-                log_prob = action_dist.log_prob(self.chosen_actions) # probability < 1 , so negative value here, [batch, t, # of actions]
-                log_prob2 = tf.log(tf.nn.sigmoid(action_dist.prob(self.chosen_actions))) # smush very high values; nothing can be bigger than 1
-                log_prob = tf.minimum(log_prob, log_prob2)
+                pass
+                #log_prob = action_dist.log_prob(self.chosen_actions) # probability < 1 , so negative value here, [batch, t, # of actions]
+                #log_prob2 = tf.log(tf.nn.sigmoid(action_dist.prob(self.chosen_actions))) # smush very high values; nothing can be bigger than 1
+                #log_prob = tf.minimum(log_prob, log_prob2)
             else:
-                log_prob = tf.minimum(action_dist.log_prob(self.chosen_actions), .99) # probability < 1 , so negative value here, [batch, t, # of actions]
-
+                pass
+                #log_prob = tf.minimum(action_dist.log_prob(self.chosen_actions), .99) # probability < 1 , so negative value here, [batch, t, # of actions]
+                #log_prob = tf.log(tf.minimum(action_dist.prob(self.chosen_actions), .99))
+                #log_prob = tf.log(action_dist.prob(self.chosen_actions))
+            log_prob = action_dist.log_prob(self.chosen_actions)
 
             # Calculate entropy
             # use absolute value of action_mu so it doesn't go negative and blow up the log,
@@ -224,9 +231,9 @@ class Model:
             self.policy_grads_and_vars = self.optimizer.compute_gradients(self.policy_loss)
             self.policy_grads_and_vars = [[grad, var] for grad, var in self.policy_grads_and_vars if grad is not None]
             self.policy_train_op = self.optimizer.apply_gradients(self.policy_grads_and_vars, global_step=tf.train.get_global_step())
-            self.policy_train_op = tf.Variable([0])
+            #self.policy_train_op = tf.Variable([0])
             self.policy_loss_summary = tf.summary.scalar('policy_loss_summary', self.policy_loss)
-            self.policy_dict = {"entropy":entropy, "log_prob": log_prob, "policy_loss":self.policy_loss, "mess":mess, "actions": self.action_mu, "output_list": self.output_list}
+            self.policy_dict = {"entropy":entropy, "log_prob": log_prob, "policy_loss":self.policy_loss, "mess":mess, "actions": self.action_mu, "sds": self.action_sd, "output_list": self.output_list}
 
             return self.policy_train_op
 

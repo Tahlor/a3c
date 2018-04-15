@@ -230,7 +230,8 @@ class Exchange:
         buy_sell_indices = self.get_batch_price_indices(state_range = None, freq=self.naive_sample_pattern, ) [:,:-1] # n-1 in prices since using the difference
         buy_sell = self.data[:]["side"][buy_sell_indices] [None,...] # add a batch dimension
         input = np.concatenate((prices,buy_sell), 2) #[1 (batches x seq length x prev_states * 2)] ; 2 is for prices and sides
-        return np.asarray(self.vanilla_prices[self.state:self.state+self.game_length]).reshape([1,-1,1])
+        basic = np.asarray(self.vanilla_prices[self.state:self.state+self.game_length]).reshape([1,-1,1])
+        return basic
 
     # same as above, but can optionally define a list [0,10,50,100] of previous time steps, or a function
     def get_price_history_func(self, current_id = None, n = 100, pattern=lambda x: x**2):
@@ -317,7 +318,7 @@ class Exchange:
         if continuous:
             action = 2*(action-np.average(self.actions))/(max(self.actions)-min(self.actions))
             raw_action = self.sample_from_action(action, abs(sd))
-        action = round(raw_action, 2)
+        action = round( min(max(raw_action, -1), 1), 2) # round off, put action in acceptable range
 
         # Margin call
         if self.permit_short and self.get_value() < self.margin_call*self.starting_cash and self.holdings < 0:
@@ -338,7 +339,7 @@ class Exchange:
 
     def sample_from_action(self, mean = 0, sd = 1):
         sample = np.random.normal(mean, sd)
-        return min(max(sample, -1), 1)
+        return sample
 
     def get_status(self):
         print("Cash {}, Holdings {}, Price {}, State {}".format(self.cash, self.holdings, self.current_price, self.state))

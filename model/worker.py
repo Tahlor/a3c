@@ -180,8 +180,10 @@ class Worker(Thread):
 
                     if int(count_string) % 100 == 0:
                         print("Finished step #{}, net worth {}, value loss {}, policy loss {}".format(int(count_string), self.exchange.get_value(), self.value_loss, self.policy_loss))
-                        #print("Actions {}".format(self.chosen_actions))
-                        #print("Action Mus {}".format(self.policy_loss_dict["actions"]))
+                        print("Actions {}".format(self.chosen_actions))
+                        print("Action Mus {}".format(self.policy_loss_dict["actions"]))
+                        print("Action SDs {}".format(self.policy_loss_dict["sds"]))
+
                         #print("Network out {}".format(self.policy_loss_dict["output_list"][0,0:10]))
 
                     if self.T_max is not None and next(self.T) >= self.T_max:
@@ -220,7 +222,7 @@ class Worker(Thread):
         self.discounted_rewards = np.asarray(discounted_rewards[::-1]).transpose([1,0])
         self.policy_advantage = np.asarray(policy_advantage[::-1]).transpose([1,0])
 
-        if self.global_step % 4000==0 and False:
+        if self.global_step % 100==0 and False:
             print("NEW RUN")
             sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
             pass
