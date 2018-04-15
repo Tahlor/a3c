@@ -37,7 +37,7 @@ TAYLOR = False
 if os.environ["COMPUTERNAME"] == 'DALAILAMA':
     DATA = ".\data\BTC_USD_100_FREQ.npy"
     NAIVE_M0DEL = True
-    GAME_MAX_LENGTH = 10
+    GAME_MAX_LENGTH = 3
     EPOCHS = 100000
     MODEL_DIR = "./tmp"
     TAYLOR = True

@@ -220,7 +220,7 @@ class Worker(Thread):
         self.discounted_rewards = np.asarray(discounted_rewards[::-1]).transpose([1,0])
         self.policy_advantage = np.asarray(policy_advantage[::-1]).transpose([1,0])
 
-        if self.global_step % 3000==0 and False:
+        if self.global_step % 4000==0 and False:
             print("NEW RUN")
             sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
             pass

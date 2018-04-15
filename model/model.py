@@ -8,7 +8,7 @@ import numpy as np
 sys.path.append("..")
 # import model.value
 # import model.policy
-
+LR = .001 #.00025
 MAIN_INITIALIZER = tfcl.variance_scaling_initializer()
 #tfcl.variance_scaling_initializer()
 #tf.ones_initializer()
@@ -63,7 +63,7 @@ class Model:
         if not naive:
             self.input_size = inputs_per_time_step * seq_length
         else:
-            self.input_size = inputs_per_time_step
+            self.input_size = 1 #inputs_per_time_step
         self.num_layers = num_layers
         self.layer_size = layer_size
         self.number_of_actions = 1
@@ -73,12 +73,12 @@ class Model:
         self.value_op = None
         self.loss_op = None
         # learning_rate = 0.00025
-        self.optimizer = tf.train.RMSPropOptimizer(learning_rate = .00025, decay=0.99, momentum=0.0, epsilon=1e-6)
+        self.optimizer = tf.train.RMSPropOptimizer(learning_rate = LR, decay=0.99, momentum=0.0, epsilon=1e-6)
         self.saver = None
         self.trainable = trainable
         self.graph = tf.Graph()
         self.discount = discount
-        self.entropy_weight = 1e-4
+        self.entropy_weight = 1e-3
         self.naive = naive
         self.network_output = None
         self.build_network()
@@ -179,8 +179,13 @@ class Model:
             action_dist = tf.contrib.distributions.Normal(self.action_mu, self.action_sd) # [batch, t, # of actions]
 
             # Get log prob given chosen actions -- this range goes in both directions...
-            #log_prob = action_dist.log_prob(self.chosen_actions) # probability < 1 , so negative value here, [batch, t, # of actions]
-            log_prob = tf.log(tf.nn.sigmoid(action_dist.prob(self.chosen_actions)))
+            if False:
+                log_prob = action_dist.log_prob(self.chosen_actions) # probability < 1 , so negative value here, [batch, t, # of actions]
+                log_prob2 = tf.log(tf.nn.sigmoid(action_dist.prob(self.chosen_actions))) # smush very high values; nothing can be bigger than 1
+                log_prob = tf.minimum(log_prob, log_prob2)
+            else:
+                log_prob = tf.minimum(action_dist.log_prob(self.chosen_actions), .99) # probability < 1 , so negative value here, [batch, t, # of actions]
+
 
             # Calculate entropy
             # use absolute value of action_mu so it doesn't go negative and blow up the log,
@@ -209,6 +214,12 @@ class Model:
             advantage = self.policy_advantage # self.advantage is dynamic, we feed in self.policy_advantage
             #self.assert_op = tf.Assert(tf.less_equal(tf.reduce_max(log_prob), 1.), [log_prob])
             self.assert_op = tf.Assert(True, [True])
+
+            ## Loss = unlikely choices with high payoffs + some noise
+            ## Need to add likely choices with negative payoffs
+
+            # If log_prob > 1, then you get loss for 1) high reward with high probability
+            # If reward is negative, you get NEGATIVE loss, for large negative reward and less likely probability
             self.policy_loss = -tf.reduce_mean(log_prob * advantage + entropy * self.entropy_weight) # policy advantage [batch, t]
             self.policy_grads_and_vars = self.optimizer.compute_gradients(self.policy_loss)
             self.policy_grads_and_vars = [[grad, var] for grad, var in self.policy_grads_and_vars if grad is not None]

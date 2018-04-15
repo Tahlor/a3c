@@ -229,7 +229,8 @@ class Exchange:
         prices = self.get_price_history(freq=self.naive_sample_pattern, batch= True, )[None,...]
         buy_sell_indices = self.get_batch_price_indices(state_range = None, freq=self.naive_sample_pattern, ) [:,:-1] # n-1 in prices since using the difference
         buy_sell = self.data[:]["side"][buy_sell_indices] [None,...] # add a batch dimension
-        return np.concatenate((prices,buy_sell), 2) #[1 (batches x seq length x prev_states * 2)] ; 2 is for prices and sides
+        input = np.concatenate((prices,buy_sell), 2) #[1 (batches x seq length x prev_states * 2)] ; 2 is for prices and sides
+        return np.asarray(self.vanilla_prices[self.state:self.state+self.game_length]).reshape([1,-1,1])
 
     # same as above, but can optionally define a list [0,10,50,100] of previous time steps, or a function
     def get_price_history_func(self, current_id = None, n = 100, pattern=lambda x: x**2):
