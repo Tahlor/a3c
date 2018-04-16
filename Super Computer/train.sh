@@ -16,7 +16,7 @@ export OMP_NUM_THREADS=$SLURM_CPUS_ON_NODE
 export PATH=~/anaconda3/bin:$PATH
 source activate conda3
 
-python3 ./main.py
+python3 -u ./main.py
 
 # To run:
 #sbatch ./train.sh

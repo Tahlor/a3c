@@ -1,4 +1,4 @@
-import gym
+#import gym
 import multiprocessing
 import threading
 import numpy as np
@@ -18,7 +18,7 @@ if not os.path.exists(SAVE_FOLDER):
 
 checkpoint_path = os.path.join(SAVE_FOLDER, 'model.ckpt')
 SAVE_FREQ = 10000 # for model checkpoints
-PRINT_FREQ = 1000
+PRINT_FREQ = 100
 
 NEGATIVE_REWARD = False # naive
 value_activation = None if NEGATIVE_REWARD else tf.nn.relu
@@ -33,10 +33,10 @@ OUTPUT_GRAPH = False # safe logs
 RENDER = True  # render one worker
 LOG_DIR = './log'  # savelocation for logs
 N_WORKERS = multiprocessing.cpu_count()  # number of workers
-MAX_EP_STEP = 100  # maxumum number of steps per episode
-MAX_GLOBAL_EP = 100  # total number of episodes
+MAX_EP_STEP = 1000  # maxumum number of steps per episode
+MAX_GLOBAL_EP = 100000  # total number of episodes
 GLOBAL_NET_SCOPE = 'Global_Net'
-UPDATE_GLOBAL_ITER = MAX_EP_STEP/2  # sets how often the global net is updated (e.g. more often than 1 game)
+UPDATE_GLOBAL_ITER = MAX_EP_STEP/10  # sets how often the global net is updated (e.g. more often than 1 game)
 GAMMA = 0.1  # discount factor
 ENTROPY_BETA = 0.01  # entropy factor
 LR_A = 0.0001  # learning rate for actor
@@ -234,7 +234,7 @@ class Worker(object):
                         print(
                             self.name,
                             "Ep:", global_episodes,
-                            "| Ep_r: {:4.1f}, Profit: {:4.1f}, Policy Loss {:4.1f}, Value loss {:4.1f}, SD {:4.1f}, State {}, Above Baseline {}".format(global_rewards[-1], profit, summary_dict["a_loss"], summary_dict["c_loss"], summary_dict["sd"][0,0], state_manager.get_current_game(), profits_above_baseline[-1])
+                            "| Ep_r: {:4.1f}, Profit: {:4.1f}, Policy Loss {:4.1f}, Value loss {:4.1f}, Mu {:4.1f}, SD {:4.1f}, State {}, Above Baseline {:4.0f}".format(global_rewards[-1], profit, summary_dict["a_loss"], summary_dict["c_loss"], summary_dict["mu"][0,0], summary_dict["sd"][0,0], state_manager.get_current_game(), profits_above_baseline[-1])
                         )
                         if False and global_episodes % 1000 == 0:
                             print ("sd", summary_dict["sd"][:,0])
@@ -327,5 +327,5 @@ if __name__ == "__main__":
         worker_threads.append(t)
         #workers[1].get_status()
     coord.join(worker_threads)  # wait for termination of workers
-    #graph()
     run_validation(sess, global_ac)
+    # graph()
