@@ -56,12 +56,12 @@ class Exchange:
                 if R > 0:
                     self.max_value=current_value
             else:
+                R = (np.log(current_value) - np.log(previous_value))*10000
                 R = current_value - previous_value
-
                 # This one gives arbitrary award amounts for not screwing up
                 if False:
                     if R > 0:
-                        R = max(R+100, 2*R)
+                        R = max(R+50, 2*R)
 
             self.step_counter += 1
             return self.get_complete_state(), R, self.step_counter, 0

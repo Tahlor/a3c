@@ -7,28 +7,33 @@ import shutil
 import matplotlib.pyplot as plt
 import tensorflow as tf
 from exchange import Exchange
+from utils import *
 
 # PARAMETERS
 NEGATIVE_REWARD = False # naive
 value_activation = None if NEGATIVE_REWARD else tf.nn.relu
+#value_activation = None
 PERMIT_SHORT = False
 A_BOUND = [-1, 1]  # action bounds
 
-OUTPUT_GRAPH = True  # safe logs
+ACTOR_NODES = 200 #200
+CRITIC_NODES = 100 #100
+
+OUTPUT_GRAPH = False # safe logs
 RENDER = True  # render one worker
 LOG_DIR = './log'  # savelocation for logs
 N_WORKERS = multiprocessing.cpu_count()  # number of workers
-MAX_EP_STEP = 10  # maxumum number of steps per episode
-MAX_GLOBAL_EP = 4000  # total number of episodes
+MAX_EP_STEP = 5  # maxumum number of steps per episode
+MAX_GLOBAL_EP = 10000  # total number of episodes
 GLOBAL_NET_SCOPE = 'Global_Net'
-UPDATE_GLOBAL_ITER = 5  # sets how often the global net is updated
+UPDATE_GLOBAL_ITER = 10  # sets how often the global net is updated
 GAMMA = 0.0  # discount factor
-ENTROPY_BETA = 0.0001  # entropy factor
+ENTROPY_BETA = 0.01  # entropy factor
 LR_A = 0.0001  # learning rate for actor
 LR_C = 0.001  # learning rate for critic
 
 NUMBER_OF_NAIVE_INPUTS = 1
-NAIVE_LOOKBACK = 5
+NAIVE_LOOKBACK = 8
 
 DATA = r"./data/BTC_USD_100_FREQ.npy"
 STARTING_STATE = 1000
@@ -40,6 +45,9 @@ print(main_exchange.get_complete_state())
 
 N_S = (main_exchange.get_complete_state().shape)[0]  # number of states
 N_A = 1  # number of actions
+
+train_dir = createLogDir(basepath=LOG_DIR)
+SUMMARY_WRITER = tf.summary.FileWriter(train_dir)
 
 
 
@@ -82,8 +90,8 @@ class ACNet(object):
                         log_prob = tf.log(abs(prob + neg_rwd_mask))  # invert probabilities with negative rewards (e.g. 99% becomes 1%); outputs (-inf, 0)
                     else:
                         prob = tf.minimum(normal_dist.prob(self.a_his), .99)
-                        log_prob = tf.log(prob)
-                        #log_prob = normal_dist.log_prob(self.a_his)
+                        #log_prob = tf.log(prob)
+                        log_prob = normal_dist.log_prob(self.a_his)
                     exp_v = log_prob * td
                     entropy = normal_dist.entropy()  # encourage exploration
                     self.exp_v = ENTROPY_BETA * entropy + exp_v
@@ -110,12 +118,12 @@ class ACNet(object):
     def _build_net(self, scope):  # neural network structure of the actor and critic
         w_init = tf.random_normal_initializer(0., .1)
         with tf.variable_scope('actor'):
-            l_a = tf.layers.dense(self.s, 200, tf.nn.relu6, kernel_initializer=w_init, name='la')
+            l_a = tf.layers.dense(self.s, ACTOR_NODES, tf.nn.relu6, kernel_initializer=w_init, name='la')
             mu = tf.layers.dense(l_a, N_A, tf.nn.tanh, kernel_initializer=w_init, name='mu')  # estimated action value
             sigma = tf.layers.dense(l_a, N_A, tf.nn.softplus, kernel_initializer=w_init,
                                     name='sigma')  # estimated variance
         with tf.variable_scope('critic'):
-            l_c = tf.layers.dense(self.s, 100, tf.nn.relu6, kernel_initializer=w_init, name='lc')
+            l_c = tf.layers.dense(self.s, CRITIC_NODES, tf.nn.relu6, kernel_initializer=w_init, name='lc')
             v = tf.layers.dense(l_c, 1, value_activation, kernel_initializer=w_init, name='v')  # estimated value for state
         a_params = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=scope + '/actor')
         c_params = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=scope + '/critic')
@@ -165,7 +173,8 @@ class Worker(object):
                 # save actions, states and rewards in buffer
                 buffer_s.append(s)
                 buffer_a.append(a)
-                buffer_r.append((r + 8) / 8)  # normalize reward
+                #buffer_r.append((r + 8) / 8)  # normalize reward
+                buffer_r.append(r)  # normalize reward
 
                 if total_step % UPDATE_GLOBAL_ITER == 0 or done:  # update global and assign to local net
                     if done:
@@ -191,9 +200,11 @@ class Worker(object):
 
                 s = s_
                 total_step += 1
+
                 if done:
                     profit = self.env.get_profit()
                     profits.append(profit)
+
                     if len(global_rewards) < 5:  # record running episode reward
                         global_rewards.append(ep_r)
                     else:
@@ -204,10 +215,23 @@ class Worker(object):
                         "Ep:", global_episodes,
                         "| Ep_r: {:4.1f}, Profit: {:4.1f}, Policy Loss {:4.1f}, Value loss {:4.1f}, SD {:4.1f}".format(global_rewards[-1], profit, summary_dict["a_loss"], summary_dict["c_loss"], summary_dict["sd"][0,0])
                     )
+
+                    log(SUMMARY_WRITER, "profit", profit, global_episodes)
+                    log(SUMMARY_WRITER, "a_loss", summary_dict["a_loss"], global_episodes)
+                    log(SUMMARY_WRITER, "c_loss", summary_dict["c_loss"], global_episodes)
+                    log(SUMMARY_WRITER, "sd", summary_dict["sd"][0, 0], global_episodes)
                     global_episodes += 1
                     break
+def graph():
+    plt.plot(np.arange(len(global_rewards)), global_rewards)  # plot rewards
+    plt.xlabel('step')
+    plt.ylabel('total moving reward')
+    plt.show()
 
-
+    plt.plot(np.arange(len(profits)), profits)  # plot profits
+    plt.xlabel('step')
+    plt.ylabel('total profits')
+    plt.show()
 
 if __name__ == "__main__":
     global_rewards = []
@@ -228,9 +252,7 @@ if __name__ == "__main__":
     sess.run(tf.global_variables_initializer())
 
     if OUTPUT_GRAPH:  # write log file
-        if os.path.exists(LOG_DIR):
-            shutil.rmtree(LOG_DIR)
-        tf.summary.FileWriter(LOG_DIR, sess.graph)
+        SUMMARY_WRITER.add_graph(sess.graph)
 
     worker_threads = []
     for worker in workers:  # start workers
@@ -241,12 +263,4 @@ if __name__ == "__main__":
         #workers[1].get_status()
     coord.join(worker_threads)  # wait for termination of workers
 
-    plt.plot(np.arange(len(global_rewards)), global_rewards)  # plot rewards
-    plt.xlabel('step')
-    plt.ylabel('total moving reward')
-    plt.show()
 
-    plt.plot(np.arange(len(profits)), profits)  # plot profits
-    plt.xlabel('step')
-    plt.ylabel('total profits')
-    plt.show()

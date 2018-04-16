@@ -48,7 +48,7 @@ def createLogDir(basepath = "./tf_logs", name = "", force_numerical_ordering = T
 
     # Check for existence
     if not os.path.exists(basepath):
-        os.mkdir(basepath)
+        os.makedirs(basepath)
 
     if force_numerical_ordering:
         while find_files(basepath, str(n) + " *") or os.path.exists(os.path.join(basepath, str(n)    )) :
@@ -59,7 +59,7 @@ def createLogDir(basepath = "./tf_logs", name = "", force_numerical_ordering = T
 
     # Create
     logdir = os.path.join(basepath, str(n) + name)
-    os.mkdir(logdir)
+    os.makedirs(logdir)
     training_accuracy_list = []
     print(logdir)
     return logdir
