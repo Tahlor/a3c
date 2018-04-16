@@ -240,11 +240,12 @@ class Worker(object):
                             print ("sd", summary_dict["sd"][:,0])
                             print ("Mu", summary_dict["mu"][:,0])
 
-                    log(SUMMARY_WRITER, "profit", profit, global_episodes)
-                    log(SUMMARY_WRITER, "a_loss", summary_dict["a_loss"], global_episodes)
-                    log(SUMMARY_WRITER, "c_loss", summary_dict["c_loss"], global_episodes)
-                    log(SUMMARY_WRITER, "sd", summary_dict["sd"][0, 0], global_episodes)
-                    log(SUMMARY_WRITER, "profit_over_baseline", profits_above_baseline[-1], global_episodes)
+                    if global_episodes % 10 == 0:
+                        log(SUMMARY_WRITER, "profit", profit, global_episodes)
+                        log(SUMMARY_WRITER, "a_loss", summary_dict["a_loss"], global_episodes)
+                        log(SUMMARY_WRITER, "c_loss", summary_dict["c_loss"], global_episodes)
+                        log(SUMMARY_WRITER, "sd", summary_dict["sd"][0, 0], global_episodes)
+                        log(SUMMARY_WRITER, "profit_over_baseline", profits_above_baseline[-1], global_episodes)
 
                     global_episodes += 1
                     # Save model every ~10k; put this after global episode counter to avoid collisions
