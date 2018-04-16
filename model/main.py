@@ -9,34 +9,38 @@ import tensorflow as tf
 from exchange import Exchange
 
 # PARAMETERS
-NEGATIVE_REWARD = False
+NEGATIVE_REWARD = False # naive
+value_activation = None if NEGATIVE_REWARD else tf.nn.relu
+PERMIT_SHORT = False
+A_BOUND = [-1, 1]  # action bounds
+
 OUTPUT_GRAPH = True  # safe logs
 RENDER = True  # render one worker
 LOG_DIR = './log'  # savelocation for logs
 N_WORKERS = multiprocessing.cpu_count()  # number of workers
 MAX_EP_STEP = 10  # maxumum number of steps per episode
-MAX_GLOBAL_EP = 10000  # total number of episodes
+MAX_GLOBAL_EP = 4000  # total number of episodes
 GLOBAL_NET_SCOPE = 'Global_Net'
-UPDATE_GLOBAL_ITER = 10  # sets how often the global net is updated
-GAMMA = 0.95  # discount factor
-ENTROPY_BETA = 0.01  # entropy factor
+UPDATE_GLOBAL_ITER = 5  # sets how often the global net is updated
+GAMMA = 0.0  # discount factor
+ENTROPY_BETA = 0.0001  # entropy factor
 LR_A = 0.0001  # learning rate for actor
 LR_C = 0.001  # learning rate for critic
 
 NUMBER_OF_NAIVE_INPUTS = 1
 NAIVE_LOOKBACK = 5
 
-DATA = r"../data/BTC_USD_100_FREQ.npy"
+DATA = r"./data/BTC_USD_100_FREQ.npy"
 STARTING_STATE = 1000
-main_exchange = Exchange(DATA, time_interval=1, game_length=MAX_EP_STEP, naive_price_history=NAIVE_LOOKBACK,naive_inputs=NUMBER_OF_NAIVE_INPUTS)
+main_exchange = Exchange(DATA, time_interval=1, game_length=MAX_EP_STEP, naive_price_history=NAIVE_LOOKBACK,naive_inputs=NUMBER_OF_NAIVE_INPUTS, permit_short=PERMIT_SHORT)
 main_exchange.reset(STARTING_STATE)
 print(main_exchange.vanilla_prices[STARTING_STATE:STARTING_STATE+MAX_EP_STEP+1])
 print(main_exchange.get_complete_state())
-print(main_exchange.get_model_input_naive(whiten=False))
+#print(main_exchange.get_model_input_naive(whiten=False))
 
 N_S = (main_exchange.get_complete_state().shape)[0]  # number of states
 N_A = 1  # number of actions
-A_BOUND = [-.5, .5]  # action bounds
+
 
 
 # Network for the Actor Critic
@@ -112,7 +116,7 @@ class ACNet(object):
                                     name='sigma')  # estimated variance
         with tf.variable_scope('critic'):
             l_c = tf.layers.dense(self.s, 100, tf.nn.relu6, kernel_initializer=w_init, name='lc')
-            v = tf.layers.dense(l_c, 1, tf.nn.relu, kernel_initializer=w_init, name='v')  # estimated value for state
+            v = tf.layers.dense(l_c, 1, value_activation, kernel_initializer=w_init, name='v')  # estimated value for state
         a_params = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=scope + '/actor')
         c_params = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=scope + '/critic')
         return mu, sigma, v, a_params, c_params
@@ -137,7 +141,7 @@ class Worker(object):
         self.sess = sess
 
     def work(self):
-        global global_rewards, global_episodes
+        global global_rewards, global_episodes, profits
         total_step = 1
         buffer_s, buffer_a, buffer_r = [], [], []
         while not coord.should_stop() and global_episodes < MAX_GLOBAL_EP:
@@ -153,8 +157,10 @@ class Worker(object):
                 # Return State, Reward, _, _
                 s_, r, done, info = self.env.step(a)  # make step in environment
                 done = True if ep_t == MAX_EP_STEP - 1 else False
-                if not NEGATIVE_REWARD:
+
+                if not NEGATIVE_REWARD and False:
                     r = max(r, 0)
+
                 ep_r += r
                 # save actions, states and rewards in buffer
                 buffer_s.append(s)
@@ -187,6 +193,7 @@ class Worker(object):
                 total_step += 1
                 if done:
                     profit = self.env.get_profit()
+                    profits.append(profit)
                     if len(global_rewards) < 5:  # record running episode reward
                         global_rewards.append(ep_r)
                     else:
@@ -204,6 +211,7 @@ class Worker(object):
 
 if __name__ == "__main__":
     global_rewards = []
+    profits = []
     global_episodes = 0
 
     sess = tf.Session()
@@ -238,3 +246,7 @@ if __name__ == "__main__":
     plt.ylabel('total moving reward')
     plt.show()
 
+    plt.plot(np.arange(len(profits)), profits)  # plot profits
+    plt.xlabel('step')
+    plt.ylabel('total profits')
+    plt.show()

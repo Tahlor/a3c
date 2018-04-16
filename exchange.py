@@ -50,12 +50,19 @@ class Exchange:
             self.get_next_state() # go to next state to find reward of that move
             current_value = self.get_value()
 
-            if True:
+            if False:
+                # This way doesn't give rewards often enough
                 R = max(current_value-self.max_value, 0)
                 if R > 0:
                     self.max_value=current_value
             else:
                 R = current_value - previous_value
+
+                # This one gives arbitrary award amounts for not screwing up
+                if False:
+                    if R > 0:
+                        R = max(R+100, 2*R)
+
             self.step_counter += 1
             return self.get_complete_state(), R, self.step_counter, 0
 
@@ -235,8 +242,6 @@ class Exchange:
 
     def get_model_input_naive(self, whiten=True):
         # this uses current state
-        print("WHAT THE HELL")
-        Stop
         prices = self.get_price_history(freq=self.naive_sample_pattern, batch= True, )[None,...]
         if self.number_of_input_types == 2:
             buy_sell_indices = self.get_batch_price_indices(state_range = None, freq=self.naive_sample_pattern, ) [:,:-1] # n-1 in prices since using the difference
@@ -247,23 +252,8 @@ class Exchange:
         #basic = np.asarray(self.vanilla_prices[self.state:self.state+self.game_length]).reshape([1,-1,1])
         #basic = (basic - np.mean(basic)) #/(np.max(basic)-np.min(basic)) # normalize
         if whiten:
-            print("WHITENING")
             network_input = self.whiten(network_input)
         return network_input
-
-    def get_model_input_naive(self):
-        # this uses current state
-
-        prices = self.get_price_history(freq=self.naive_sample_pattern, batch= True, )[None,...]
-        if self.number_of_input_types == 2:
-            buy_sell_indices = self.get_batch_price_indices(state_range = None, freq=self.naive_sample_pattern, ) [:,:-1] # n-1 in prices since using the difference
-            buy_sell = self.data[:]["side"][buy_sell_indices] [None,...] # add a batch dimension
-            input = np.concatenate((prices,buy_sell), 2) #[1 (batches x seq length x prev_states * 2)] ; 2 is for prices and sides
-        else:
-            input = prices
-        #basic = np.asarray(self.vanilla_prices[self.state:self.state+self.game_length]).reshape([1,-1,1])
-        #basic = (basic - np.mean(basic)) #/(np.max(basic)-np.min(basic)) # normalize
-        return input # BATCH X SEQ X 1 or 2
 
     def buy_security(self, coin = None, currency = None):
         assert (coin is None) != (currency is None)
@@ -298,6 +288,7 @@ class Exchange:
 
     def get_profit(self):
         return self.get_value() - self.starting_cash
+
     def get_perc_cash(self):
         return self.cash/self.get_value()
 
