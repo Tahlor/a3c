@@ -57,7 +57,7 @@ NUMBER_OF_HOLDOUTS = 30
 
 DATA = r"./data/BTC_USD_100_FREQ.npy"
 main_exchange = Exchange(DATA, time_interval=1, game_length=MAX_EP_STEP, naive_price_history=NAIVE_LOOKBACK,naive_inputs=NUMBER_OF_NAIVE_INPUTS, permit_short=PERMIT_SHORT, naive=False)
-state_manager = nextState(main_exchange.state_range, game_length=MAX_EP_STEP, hold_out_list=None, number_of_holdouts=NUMBER_OF_HOLDOUTS)
+state_manager = nextState(main_exchange.state_range, game_length=MAX_EP_STEP, hold_out_list=None, number_of_holdouts=NUMBER_OF_HOLDOUTS, no_random=True)
 STARTING_STATE = state_manager.get_next()
 print(STARTING_STATE)
 main_exchange.reset(STARTING_STATE)

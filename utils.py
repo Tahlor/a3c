@@ -63,13 +63,13 @@ class nextState():
         self.hold_out_list = hold_out_list
         if hold_out_list is None:
             self.hold_out_list = np.random.choice(self.game_numbers, self.number_of_holdouts, replace=False)
+        self.no_random = no_random
         self.reset()
         self.hold_out_game_number = 0
-        self.no_random = no_random
 
     def reset(self): # first valid state may not be 0, add it back in; multiply game index by game_length
         if self.no_random:
-            self.game_list = self.state_range[0] + range(0, self.game_numbers)
+            self.game_list = np.asarray([self.state_range[0] + i for i in range(0, self.game_numbers)])
         else:
             self.game_list = self.state_range[0] + np.random.choice(self.game_numbers  , self.game_numbers , replace=False) * self.game_length
         self.current_game_idx = 0
