@@ -13,8 +13,8 @@ from utils import *
 NEGATIVE_REWARD = False # naive
 value_activation = None if NEGATIVE_REWARD else tf.nn.relu
 #value_activation = None
-PERMIT_SHORT = False
-A_BOUND = [-1, 1]  # action bounds
+PERMIT_SHORT = True
+A_BOUND = [x*.9 for x in [-1, 1.0]]  # action bounds
 
 ACTOR_NODES = 200 #200
 CRITIC_NODES = 100 #100
@@ -23,11 +23,11 @@ OUTPUT_GRAPH = False # safe logs
 RENDER = True  # render one worker
 LOG_DIR = './log'  # savelocation for logs
 N_WORKERS = multiprocessing.cpu_count()  # number of workers
-MAX_EP_STEP = 5  # maxumum number of steps per episode
+MAX_EP_STEP = 100  # maxumum number of steps per episode
 MAX_GLOBAL_EP = 10000  # total number of episodes
 GLOBAL_NET_SCOPE = 'Global_Net'
-UPDATE_GLOBAL_ITER = 10  # sets how often the global net is updated
-GAMMA = 0.0  # discount factor
+UPDATE_GLOBAL_ITER = MAX_EP_STEP/2  # sets how often the global net is updated (e.g. more often than 1 game)
+GAMMA = 0.1  # discount factor
 ENTROPY_BETA = 0.01  # entropy factor
 LR_A = 0.0001  # learning rate for actor
 LR_C = 0.001  # learning rate for critic
@@ -35,13 +35,18 @@ LR_C = 0.001  # learning rate for critic
 NUMBER_OF_NAIVE_INPUTS = 1
 NAIVE_LOOKBACK = 8
 
+NUMBER_OF_HOLDOUTS = 30
+
 DATA = r"./data/BTC_USD_100_FREQ.npy"
-STARTING_STATE = 1000
-main_exchange = Exchange(DATA, time_interval=1, game_length=MAX_EP_STEP, naive_price_history=NAIVE_LOOKBACK,naive_inputs=NUMBER_OF_NAIVE_INPUTS, permit_short=PERMIT_SHORT)
+main_exchange = Exchange(DATA, time_interval=1, game_length=MAX_EP_STEP, naive_price_history=NAIVE_LOOKBACK,naive_inputs=NUMBER_OF_NAIVE_INPUTS, permit_short=PERMIT_SHORT, naive= True)
+state_manager = nextState(main_exchange.state_range, game_length=MAX_EP_STEP, hold_out_list = None, number_of_holdouts=NUMBER_OF_HOLDOUTS)
+STARTING_STATE = state_manager.get_next()
+print(STARTING_STATE)
 main_exchange.reset(STARTING_STATE)
+
 print(main_exchange.vanilla_prices[STARTING_STATE:STARTING_STATE+MAX_EP_STEP+1])
 print(main_exchange.get_complete_state())
-#print(main_exchange.get_model_input_naive(whiten=False))
+#print(main_exchange.get_model_input_naive(whiten=True))
 
 N_S = (main_exchange.get_complete_state().shape)[0]  # number of states
 N_A = 1  # number of actions
@@ -78,7 +83,7 @@ class ACNet(object):
 
 
                 with tf.name_scope('wrap_a_out'):
-                    mu, sigma = mu * A_BOUND[1], sigma + 1e-4
+                    mu, sigma = mu * A_BOUND[1], tf.minimum(sigma + 1e-4, 2)
 
                 normal_dist = tf.contrib.distributions.Normal(mu, sigma)
 
@@ -149,11 +154,11 @@ class Worker(object):
         self.sess = sess
 
     def work(self):
-        global global_rewards, global_episodes, profits
+        global global_rewards, global_episodes, profits, state_manager
         total_step = 1
         buffer_s, buffer_a, buffer_r = [], [], []
         while not coord.should_stop() and global_episodes < MAX_GLOBAL_EP:
-            s = self.env.reset(STARTING_STATE)
+            s = self.env.reset(state_manager.get_next())
             ep_r = 0
             for ep_t in range(MAX_EP_STEP):
                 # Render one worker
@@ -174,7 +179,7 @@ class Worker(object):
                 buffer_s.append(s)
                 buffer_a.append(a)
                 #buffer_r.append((r + 8) / 8)  # normalize reward
-                buffer_r.append(r)  # normalize reward
+                buffer_r.append(r)
 
                 if total_step % UPDATE_GLOBAL_ITER == 0 or done:  # update global and assign to local net
                     if done:
@@ -210,11 +215,17 @@ class Worker(object):
                     else:
                         global_rewards.append(ep_r)
                         global_rewards[-1] = (np.mean(global_rewards[-5:]))  # smoothing
-                    print(
-                        self.name,
-                        "Ep:", global_episodes,
-                        "| Ep_r: {:4.1f}, Profit: {:4.1f}, Policy Loss {:4.1f}, Value loss {:4.1f}, SD {:4.1f}".format(global_rewards[-1], profit, summary_dict["a_loss"], summary_dict["c_loss"], summary_dict["sd"][0,0])
-                    )
+
+                    if global_episodes % 100 == 0:
+
+                        print(
+                            self.name,
+                            "Ep:", global_episodes,
+                            "| Ep_r: {:4.1f}, Profit: {:4.1f}, Policy Loss {:4.1f}, Value loss {:4.1f}, SD {:4.1f}, State {}".format(global_rewards[-1], profit, summary_dict["a_loss"], summary_dict["c_loss"], summary_dict["sd"][0,0], state_manager.get_current_game())
+                        )
+                        if False and global_episodes % 1000 == 0:
+                            print ("sd", summary_dict["sd"][:,0])
+                            print ("Mu", summary_dict["mu"][:,0])
 
                     log(SUMMARY_WRITER, "profit", profit, global_episodes)
                     log(SUMMARY_WRITER, "a_loss", summary_dict["a_loss"], global_episodes)
@@ -232,6 +243,29 @@ def graph():
     plt.xlabel('step')
     plt.ylabel('total profits')
     plt.show()
+
+def run_validation(sess, globalAC):
+
+    env = main_exchange.copy()  # make environment for each worker
+    AC = ACNet("validation", sess, globalAC)  # create ACNet for each worker
+
+    total_profit = 0
+    buy_and_hold = 0
+    buy_and_hold_list = 0
+    for holdout in range(0, NUMBER_OF_HOLDOUTS):
+        start = state_manager.get_validation()
+        end = start + MAX_EP_STEP
+        s = env.reset(start)
+        buy_and_hold += 10000 * (env.vanilla_prices[end]/env.vanilla_prices[start])
+        
+        for ep_t in range(MAX_EP_STEP):
+            a = AC.choose_action(s)  # estimate stochastic action based on policy
+
+            # Return State, Reward, _, _
+            s_, r, done, info = env.step(a)
+            total_profit += r
+    print("Total profit (learned) (): {}".format())
+    print("Total profit (): {}".format())
 
 if __name__ == "__main__":
     global_rewards = []
@@ -262,5 +296,5 @@ if __name__ == "__main__":
         worker_threads.append(t)
         #workers[1].get_status()
     coord.join(worker_threads)  # wait for termination of workers
-
+    graph()
 

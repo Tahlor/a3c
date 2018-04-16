@@ -56,8 +56,10 @@ class Exchange:
                 if R > 0:
                     self.max_value=current_value
             else:
-                R = (np.log(current_value) - np.log(previous_value))*10000
-                R = current_value - previous_value
+                R = (np.log(current_value) - np.log(previous_value))*100
+                if R == 0 and not self.permit_short:
+                    R = .02 # if the price is tanking and you're not in the market, do nothing
+                #R = current_value - previous_value
                 # This one gives arbitrary award amounts for not screwing up
                 if False:
                     if R > 0:
@@ -82,15 +84,18 @@ class Exchange:
         self.naive_prices = self.get_model_input_naive()
         return self.get_complete_state()
 
-    def get_complete_state(self):
+    def get_complete_state(self, verbose=False):
         if self.naive and self.step_counter < self.game_length:
             price_change = self.naive_prices[0, self.step_counter]
         else:
             price_change = np.asarray(self.log_prices[self.state] - self.log_prices[self.state-1])
-        ratio = self.get_perc_cash()
+        ratio = self.get_perc_cash() - .5
         time_increment = self.data[self.state]["time"]-self.data[self.state-1]["time"]
-        side = self.data[self.state]["side"]
-        complete_state = np.concatenate([price_change.reshape(-1), np.asarray([ratio, time_increment, side])])
+        side = self.data[self.state]["side"] - .5
+        #complete_state = np.concatenate([price_change.reshape(-1), np.asarray([ratio, time_increment, side])])
+        complete_state = np.concatenate([price_change.reshape(-1), np.asarray([ratio])])
+        if verbose:
+            print(complete_state)
         return complete_state
 
     def get_model_input(self, batch_size=1, price_range=None, exogenous=True):
@@ -284,7 +289,7 @@ class Exchange:
         return {"cash":self.cash, "holdings":self.holdings}
 
     def get_value(self):
-        return self.cash + self.holdings*self.current_price
+        return max(self.cash + self.holdings*self.current_price, 1) #
 
     def get_profit(self):
         return self.get_value() - self.starting_cash
