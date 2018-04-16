@@ -13,9 +13,8 @@ export OMP_NUM_THREADS=$SLURM_CPUS_ON_NODE
 # LOAD MODULES, INSERT CODE, AND RUN YOUR PROGRAMS HERE
 #%Module
 
-module show anaconda/3/4.3.1
-module purge
-module load fslhome/tarch/.conda/envs/my_root
+export PATH=~/anaconda3/bin:$PATH
+source activate conda3
 
 python3 ./main.py
 

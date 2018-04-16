@@ -163,11 +163,13 @@ class Worker(object):
         self.sess = sess
 
     def work(self):
-        global global_rewards, global_episodes, profits, state_manager
+        global global_rewards, global_episodes, profits, state_manager, profits_above_baseline
         total_step = 1
         buffer_s, buffer_a, buffer_r = [], [], []
         while not coord.should_stop() and global_episodes < MAX_GLOBAL_EP:
-            s = self.env.reset(state_manager.get_next())
+            start =  state_manager.get_next()
+            end = start + MAX_EP_STEP
+            s = self.env.reset(start)
             ep_r = 0
             for ep_t in range(MAX_EP_STEP):
                 # Render one worker
@@ -216,8 +218,10 @@ class Worker(object):
                 total_step += 1
 
                 if done:
+                    buy_and_hold = 10000 * self.env.vanilla_prices[end]/self.env.vanilla_prices[start] - 10000
                     profit = self.env.get_profit()
                     profits.append(profit)
+                    profits_above_baseline.append(profit-buy_and_hold)
 
                     if len(global_rewards) < 5:  # record running episode reward
                         global_rewards.append(ep_r)
@@ -230,7 +234,7 @@ class Worker(object):
                         print(
                             self.name,
                             "Ep:", global_episodes,
-                            "| Ep_r: {:4.1f}, Profit: {:4.1f}, Policy Loss {:4.1f}, Value loss {:4.1f}, SD {:4.1f}, State {}".format(global_rewards[-1], profit, summary_dict["a_loss"], summary_dict["c_loss"], summary_dict["sd"][0,0], state_manager.get_current_game())
+                            "| Ep_r: {:4.1f}, Profit: {:4.1f}, Policy Loss {:4.1f}, Value loss {:4.1f}, SD {:4.1f}, State {}, Above Baseline {}".format(global_rewards[-1], profit, summary_dict["a_loss"], summary_dict["c_loss"], summary_dict["sd"][0,0], state_manager.get_current_game(), profits_above_baseline[-1])
                         )
                         if False and global_episodes % 1000 == 0:
                             print ("sd", summary_dict["sd"][:,0])
@@ -240,6 +244,7 @@ class Worker(object):
                     log(SUMMARY_WRITER, "a_loss", summary_dict["a_loss"], global_episodes)
                     log(SUMMARY_WRITER, "c_loss", summary_dict["c_loss"], global_episodes)
                     log(SUMMARY_WRITER, "sd", summary_dict["sd"][0, 0], global_episodes)
+                    log(SUMMARY_WRITER, "profit_over_baseline", profits_above_baseline[-1], global_episodes)
 
                     global_episodes += 1
                     # Save model every ~10k; put this after global episode counter to avoid collisions
@@ -291,7 +296,7 @@ if __name__ == "__main__":
     global_rewards = []
     profits = []
     global_episodes = 0
-
+    profits_above_baseline = []
     sess = tf.Session()
 
     with tf.device("/cpu:0"):
