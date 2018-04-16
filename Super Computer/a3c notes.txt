@@ -1,0 +1,11 @@
+salloc --mem 16000M --time 2:00:00 --gres=gpu:2
+
+cd /fslhome/tarch/compute/678/a3c
+python3 main.py
+
+module load anaconda/3/4.3.1
+source activate conda3
+
+# Install
+module load anaconda/3/4.3.1
+pip install --user gym

@@ -1,4 +1,4 @@
-# import gym
+#import gym
 import multiprocessing
 import threading
 import numpy as np
@@ -13,6 +13,16 @@ from exchange import Exchange
 from utils import *
 
 # PARAMETERS
+SAVE_FOLDER = "./checkpoints"
+RESTORE_PATH = ""
+
+if not os.path.exists(SAVE_FOLDER):
+    os.makedirs(SAVE_FOLDER)
+
+checkpoint_path = os.path.join(SAVE_FOLDER, 'model.ckpt')
+SAVE_FREQ = 10000 # for model checkpoints
+PRINT_FREQ = 100
+
 NEGATIVE_REWARD = False # naive
 value_activation = None if NEGATIVE_REWARD else tf.nn.relu
 #value_activation = None
@@ -26,10 +36,10 @@ OUTPUT_GRAPH = False # safe logs
 RENDER = True  # render one worker
 LOG_DIR = './log'  # savelocation for logs
 N_WORKERS = multiprocessing.cpu_count()  # number of workers
-MAX_EP_STEP = 100  # maximum number of steps per episode
-MAX_GLOBAL_EP = 10000  # total number of episodes
+MAX_EP_STEP = 1000  # maxumum number of steps per episode
+MAX_GLOBAL_EP = 100000  # total number of episodes
 GLOBAL_NET_SCOPE = 'Global_Net'
-UPDATE_GLOBAL_ITER = MAX_EP_STEP / 2.0  # sets how often the global net is updated (e.g. more often than 1 game)
+UPDATE_GLOBAL_ITER = MAX_EP_STEP/10  # sets how often the global net is updated (e.g. more often than 1 game)
 GAMMA = 0.1  # discount factor
 ENTROPY_BETA = 0.01  # entropy factor
 LR_A = 0.0001  # learning rate for actor
@@ -38,19 +48,18 @@ N_LAYERS = 1 # number of layers in GRU implementation
 USE_NAIVE = False
 
 NUMBER_OF_NAIVE_INPUTS = 1
-NAIVE_LOOKBACK = 8
-
+NAIVE_LOOKBACK = 10
 NUMBER_OF_HOLDOUTS = 30
 
 DATA = r"./data/BTC_USD_100_FREQ.npy"
 main_exchange = Exchange(DATA, time_interval=1, game_length=MAX_EP_STEP, naive_price_history=NAIVE_LOOKBACK,naive_inputs=NUMBER_OF_NAIVE_INPUTS, permit_short=PERMIT_SHORT, naive=False)
-state_manager = nextState(main_exchange.state_range, game_length=MAX_EP_STEP, hold_out_list = None, number_of_holdouts=NUMBER_OF_HOLDOUTS)
+state_manager = nextState(main_exchange.state_range, game_length=MAX_EP_STEP, hold_out_list=None, number_of_holdouts=NUMBER_OF_HOLDOUTS)
 STARTING_STATE = state_manager.get_next()
 print(STARTING_STATE)
 main_exchange.reset(STARTING_STATE)
 
 print(main_exchange.vanilla_prices[STARTING_STATE:STARTING_STATE+MAX_EP_STEP+1])
-print(main_exchange.get_complete_state())
+#print(main_exchange.get_complete_state())
 #print(main_exchange.get_model_input_naive(whiten=True))
 
 N_S = (main_exchange.get_complete_state().shape)[0]  # number of states
@@ -181,13 +190,15 @@ class Worker(object):
         self.sess = sess
 
     def work(self):
-        global global_rewards, global_episodes, profits, state_manager
+        global global_rewards, global_episodes, profits, state_manager, profits_above_baseline
         total_step = 1
         a_state = np.zeros([1, ACTOR_NODES])
         c_state = np.zeros([1, CRITIC_NODES])
         buffer_s, buffer_a, buffer_r, buffer_a_state, buffer_c_state = [], [], [], [], []
         while not coord.should_stop() and global_episodes < MAX_GLOBAL_EP:
-            s = self.env.reset(state_manager.get_next())
+            start = state_manager.get_next()
+            end = start + MAX_EP_STEP
+            s = self.env.reset(start)
             ep_r = 0
             for ep_t in range(MAX_EP_STEP):
                 # Render one worker
@@ -240,8 +251,10 @@ class Worker(object):
                 total_step += 1
 
                 if done:
+                    buy_and_hold = 10000 * self.env.vanilla_prices[end]/self.env.vanilla_prices[start] - 10000
                     profit = self.env.get_profit()
                     profits.append(profit)
+                    profits_above_baseline.append(profit-buy_and_hold)
 
                     if len(global_rewards) < 5:  # record running episode reward
                         global_rewards.append(ep_r)
@@ -249,22 +262,29 @@ class Worker(object):
                         global_rewards.append(ep_r)
                         global_rewards[-1] = (np.mean(global_rewards[-5:]))  # smoothing
 
-                    if global_episodes % 100 == 0:
+                    if global_episodes % PRINT_FREQ == 0:
 
                         print(
                             self.name,
                             "Ep:", global_episodes,
-                            "| Ep_r: {:4.1f}, Profit: {:4.1f}, Policy Loss {:4.1f}, Value loss {:4.1f}, SD {:4.1f}, State {}".format(global_rewards[-1], profit, summary_dict["a_loss"], summary_dict["c_loss"], summary_dict["sd"][0,0], state_manager.get_current_game())
+                            "| Ep_r: {:4.1f}, Profit: {:4.1f}, Policy Loss {:4.1f}, Value loss {:4.1f}, Mu {:4.1f}, SD {:4.1f}, State {}, Above Baseline {:4.0f}".format(global_rewards[-1], profit, summary_dict["a_loss"], summary_dict["c_loss"], summary_dict["mu"][0,0], summary_dict["sd"][0,0], state_manager.get_current_game(), profits_above_baseline[-1])
                         )
                         if False and global_episodes % 1000 == 0:
                             print ("sd", summary_dict["sd"][:,0])
                             print ("Mu", summary_dict["mu"][:,0])
 
-                    log(SUMMARY_WRITER, "profit", profit, global_episodes)
-                    log(SUMMARY_WRITER, "a_loss", summary_dict["a_loss"], global_episodes)
-                    log(SUMMARY_WRITER, "c_loss", summary_dict["c_loss"], global_episodes)
-                    log(SUMMARY_WRITER, "sd", summary_dict["sd"][0, 0], global_episodes)
+                    if global_episodes % 10 == 0:
+                        log(SUMMARY_WRITER, "profit", profit, global_episodes)
+                        log(SUMMARY_WRITER, "a_loss", summary_dict["a_loss"], global_episodes)
+                        log(SUMMARY_WRITER, "c_loss", summary_dict["c_loss"], global_episodes)
+                        log(SUMMARY_WRITER, "sd", summary_dict["sd"][0, 0], global_episodes)
+                        log(SUMMARY_WRITER, "profit_over_baseline", profits_above_baseline[-1], global_episodes)
+
                     global_episodes += 1
+                    # Save model every ~10k; put this after global episode counter to avoid collisions
+                    if global_episodes % SAVE_FREQ == 1 and global_episodes > 1:
+                        saver.save(sess, checkpoint_path, global_step=global_episodes)
+
                     break
 def graph():
     plt.plot(np.arange(len(global_rewards)), global_rewards)  # plot rewards
@@ -281,30 +301,36 @@ def run_validation(sess, globalAC):
 
     env = main_exchange.copy()  # make environment for each worker
     AC = ACNet("validation", sess, globalAC)  # create ACNet for each worker
+    sess.run(tf.global_variables_initializer())
+    buy_and_hold_list = []
+    bot_profit_list = []
 
-    total_profit = 0
-    buy_and_hold = 0
-    buy_and_hold_list = 0
     for holdout in range(0, NUMBER_OF_HOLDOUTS):
         start = state_manager.get_validation()
         end = start + MAX_EP_STEP
         s = env.reset(start)
-        buy_and_hold += 10000 * (env.vanilla_prices[end]/env.vanilla_prices[start])
-        
+        buy_and_hold_gain = 10000 * (env.vanilla_prices[end]/env.vanilla_prices[start]) - 10000
+        buy_and_hold_list.append(buy_and_hold_gain)
+
+        local_profit = 0
         for ep_t in range(MAX_EP_STEP):
             a = AC.choose_action(s)  # estimate stochastic action based on policy
 
             # Return State, Reward, _, _
             s_, r, done, info = env.step(a)
-            total_profit += r
-    print("Total profit (learned) (): {}".format())
-    print("Total profit (): {}".format())
+            local_profit += r
+        bot_profit_list.append(local_profit)
+
+    print("Total profit (learned): {}".format(sum(bot_profit_list)))
+    print("Total profit (buy and hold): {}".format(sum(buy_and_hold_list)))
+    print(buy_and_hold_list)
+    print(bot_profit_list)
 
 if __name__ == "__main__":
     global_rewards = []
     profits = []
     global_episodes = 0
-
+    profits_above_baseline = []
     sess = tf.Session()
 
     with tf.device("/cpu:0"):
@@ -318,6 +344,12 @@ if __name__ == "__main__":
     coord = tf.train.Coordinator()
     sess.run(tf.global_variables_initializer())
 
+    saver = tf.train.Saver(tf.global_variables())
+    if RESTORE_PATH != "":
+        ckpt = tf.train.get_checkpoint_state(RESTORE_PATH )
+        saver.restore(sess, ckpt.model_checkpoint_path)
+
+
     if OUTPUT_GRAPH:  # write log file
         SUMMARY_WRITER.add_graph(sess.graph)
 
@@ -329,5 +361,5 @@ if __name__ == "__main__":
         worker_threads.append(t)
         #workers[1].get_status()
     coord.join(worker_threads)  # wait for termination of workers
-    graph()
-
+    run_validation(sess, global_ac)
+    # graph()

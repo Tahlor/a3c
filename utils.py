@@ -72,12 +72,17 @@ class nextState():
 
     def get_next(self):
         self.current_game_idx += 1
+
+        # Don't do holdouts
+        while self.current_game_idx in self.hold_out_list:
+            self.current_game_idx += 1
+
         if self.current_game_idx >= len(self.game_list):
             self.reset()
         return self.game_list[self.current_game_idx] + np.random.randint(0, self.game_length)
 
     def get_validation(self):
-        self.hold_out_game_number = (self.hold_out_game_number + 1 ) % self.hold_out_game_number
+        self.hold_out_game_number = (self.hold_out_game_number + 1 ) % self.number_of_holdouts
         return self.hold_out_list[self.hold_out_game_number]
 
     def get_current_game(self):
