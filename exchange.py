@@ -18,7 +18,6 @@ class Exchange:
         self.game_length = game_length
         self.naive_sample_pattern = [2**x for x in range(2,2+self.number_of_input_prices_for_basic)] # for naive model, which previous prices to look at;
         # will be the len of the number of input prices, we'll add the 0 later
-
         self.data = np.load(data_stream)
         self.vanilla_prices = self.data[:]["price"].astype('float64')
         print("States in data: {}".format(len(self.vanilla_prices)))
@@ -31,6 +30,8 @@ class Exchange:
         self.state_range = [min_state, max_state]
         self.state = min_state
         self.current_price = self.vanilla_prices[self.state]
+        self.naive_prices = self.get_model_input_naive()
+
 
         self.starting_cash = cash
         self.cash = cash
@@ -48,8 +49,13 @@ class Exchange:
             self.interpret_action(a, sample=False)
             self.get_next_state() # go to next state to find reward of that move
             current_value = self.get_value()
-            R = current_value - previous_value
 
+            if True:
+                R = max(current_value-self.max_value, 0)
+                if R > 0:
+                    self.max_value=current_value
+            else:
+                R = current_value - previous_value
             self.step_counter += 1
             return self.get_complete_state(), R, self.step_counter, 0
 
@@ -61,15 +67,17 @@ class Exchange:
     def reset(self, state = None):
         if state is None:
             state = self.state_range[0]
-        self.step_counter = 1
+        self.step_counter = 0
         self.cash = self.starting_cash
+        self.max_value = self.cash
         self.holdings = 0
         self.goto_state(state)
+        self.naive_prices = self.get_model_input_naive()
         return self.get_complete_state()
 
     def get_complete_state(self):
-        if self.naive:
-            price_change = self.get_model_input_naive()
+        if self.naive and self.step_counter < self.game_length:
+            price_change = self.naive_prices[0, self.step_counter]
         else:
             price_change = np.asarray(self.log_prices[self.state] - self.log_prices[self.state-1])
         ratio = self.get_perc_cash()
@@ -222,6 +230,27 @@ class Exchange:
             else:
                 return prices[price_indices][:,0:-1] - prices[price_indices][:,1:]
 
+    def whiten(self, x):
+        return (x - np.mean(x)) / math.sqrt(np.var(x))
+
+    def get_model_input_naive(self, whiten=True):
+        # this uses current state
+        print("WHAT THE HELL")
+        Stop
+        prices = self.get_price_history(freq=self.naive_sample_pattern, batch= True, )[None,...]
+        if self.number_of_input_types == 2:
+            buy_sell_indices = self.get_batch_price_indices(state_range = None, freq=self.naive_sample_pattern, ) [:,:-1] # n-1 in prices since using the difference
+            buy_sell = self.data[:]["side"][buy_sell_indices] [None,...] # add a batch dimension
+            network_input = np.concatenate((prices,buy_sell), 2) #[1 (batches x seq length x prev_states * 2)] ; 2 is for prices and sides
+        else:
+            network_input= prices
+        #basic = np.asarray(self.vanilla_prices[self.state:self.state+self.game_length]).reshape([1,-1,1])
+        #basic = (basic - np.mean(basic)) #/(np.max(basic)-np.min(basic)) # normalize
+        if whiten:
+            print("WHITENING")
+            network_input = self.whiten(network_input)
+        return network_input
+
     def get_model_input_naive(self):
         # this uses current state
 
@@ -234,7 +263,7 @@ class Exchange:
             input = prices
         #basic = np.asarray(self.vanilla_prices[self.state:self.state+self.game_length]).reshape([1,-1,1])
         #basic = (basic - np.mean(basic)) #/(np.max(basic)-np.min(basic)) # normalize
-        return input
+        return input # BATCH X SEQ X 1 or 2
 
     def buy_security(self, coin = None, currency = None):
         assert (coin is None) != (currency is None)
@@ -302,8 +331,8 @@ class Exchange:
         print("Cash {}, Holdings {}, Price {}, State {}".format(self.cash, self.holdings, self.current_price, self.state))
 
 if __name__ == "__main__":
-    np.set_printoptions(formatter={'int_kind': lambda x: "{:0>3d}".format(x)})
-    np.set_printoptions(formatter={'float_kind': lambda x: "{0:6.3f}".format(x)})
+    #np.set_printoptions(formatter={'int_kind': lambda x: "{:0>3d}".format(x)})
+    #np.set_printoptions(formatter={'float_kind': lambda x: "{0:6.3f}".format(x)})
 
     # myExchange = Exchange(DATA, time_interval=60)
     # myExchange = Exchange(DATA)
@@ -311,4 +340,7 @@ if __name__ == "__main__":
     # test_getting_prices(myExchange)
     #print(myExchange.get_price_history(n = 1, freq=1))
 
-    play_game()
+    #play_game()
+    pass
+
+

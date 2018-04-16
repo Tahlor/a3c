@@ -15,10 +15,10 @@ RENDER = True  # render one worker
 LOG_DIR = './log'  # savelocation for logs
 N_WORKERS = multiprocessing.cpu_count()  # number of workers
 MAX_EP_STEP = 10  # maxumum number of steps per episode
-MAX_GLOBAL_EP = 1000  # total number of episodes
+MAX_GLOBAL_EP = 10000  # total number of episodes
 GLOBAL_NET_SCOPE = 'Global_Net'
 UPDATE_GLOBAL_ITER = 10  # sets how often the global net is updated
-GAMMA = 0.80  # discount factor
+GAMMA = 0.95  # discount factor
 ENTROPY_BETA = 0.01  # entropy factor
 LR_A = 0.0001  # learning rate for actor
 LR_C = 0.001  # learning rate for critic
@@ -32,8 +32,7 @@ main_exchange = Exchange(DATA, time_interval=1, game_length=MAX_EP_STEP, naive_p
 main_exchange.reset(STARTING_STATE)
 print(main_exchange.vanilla_prices[STARTING_STATE:STARTING_STATE+MAX_EP_STEP+1])
 print(main_exchange.get_complete_state())
-
-# if RENDER:                 # uncomment if rendering does not work
+print(main_exchange.get_model_input_naive(whiten=False))
 
 N_S = (main_exchange.get_complete_state().shape)[0]  # number of states
 N_A = 1  # number of actions
@@ -113,7 +112,7 @@ class ACNet(object):
                                     name='sigma')  # estimated variance
         with tf.variable_scope('critic'):
             l_c = tf.layers.dense(self.s, 100, tf.nn.relu6, kernel_initializer=w_init, name='lc')
-            v = tf.layers.dense(l_c, 1, kernel_initializer=w_init, name='v')  # estimated value for state
+            v = tf.layers.dense(l_c, 1, tf.nn.relu, kernel_initializer=w_init, name='v')  # estimated value for state
         a_params = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=scope + '/actor')
         c_params = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=scope + '/critic')
         return mu, sigma, v, a_params, c_params
@@ -196,7 +195,7 @@ class Worker(object):
                     print(
                         self.name,
                         "Ep:", global_episodes,
-                        "| Ep_r: {:4.1f}, Profit: {:4.1f}, Policy Loss {:4.1f}, Value loss {:4.1f}".format(global_rewards[-1], profit, summary_dict["a_loss"], summary_dict["c_loss"])
+                        "| Ep_r: {:4.1f}, Profit: {:4.1f}, Policy Loss {:4.1f}, Value loss {:4.1f}, SD {:4.1f}".format(global_rewards[-1], profit, summary_dict["a_loss"], summary_dict["c_loss"], summary_dict["sd"][0,0])
                     )
                     global_episodes += 1
                     break
@@ -231,7 +230,7 @@ if __name__ == "__main__":
         t = threading.Thread(target=job)
         t.start()
         worker_threads.append(t)
-        workers[1].get_status()
+        #workers[1].get_status()
     coord.join(worker_threads)  # wait for termination of workers
 
     plt.plot(np.arange(len(global_rewards)), global_rewards)  # plot rewards
