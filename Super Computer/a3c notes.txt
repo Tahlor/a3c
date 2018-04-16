@@ -1,0 +1,5 @@
+module show anaconda/3/4.3.1
+module purge
+module load fslhome/tarch/.conda/envs/my_root
+
+
