@@ -55,7 +55,7 @@ def find_files(base, pattern):
 
 
 class nextState():
-    def __init__(self, state_range, game_length, hold_out_list = None, number_of_holdouts = 0):
+    def __init__(self, state_range, game_length, hold_out_list = None, number_of_holdouts = 0, no_random = False):
         self.number_of_holdouts = number_of_holdouts
         self.state_range = state_range
         self.game_numbers = int((state_range[1] - state_range[0]) / game_length)-1 # subtract one just in case
@@ -65,9 +65,13 @@ class nextState():
             self.hold_out_list = np.random.choice(self.game_numbers, self.number_of_holdouts, replace=False)
         self.reset()
         self.hold_out_game_number = 0
+        self.no_random = no_random
 
     def reset(self): # first valid state may not be 0, add it back in; multiply game index by game_length
-        self.game_list = self.state_range[0] + np.random.choice(self.game_numbers  , self.game_numbers , replace=False) * self.game_length
+        if self.no_random:
+            self.game_list = self.state_range[0] + range(0, self.game_numbers)
+        else:
+            self.game_list = self.state_range[0] + np.random.choice(self.game_numbers  , self.game_numbers , replace=False) * self.game_length
         self.current_game_idx = 0
 
     def get_next(self):
@@ -79,7 +83,10 @@ class nextState():
 
         if self.current_game_idx >= len(self.game_list):
             self.reset()
-        return self.game_list[self.current_game_idx] + np.random.randint(0, self.game_length)
+        if self.no_random:
+            return self.game_list[self.current_game_idx]
+        else:
+            return self.game_list[self.current_game_idx] + np.random.randint(0, self.game_length)
 
     def get_validation(self):
         self.hold_out_game_number = (self.hold_out_game_number + 1 ) % self.number_of_holdouts
