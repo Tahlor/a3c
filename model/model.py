@@ -208,7 +208,7 @@ class Model:
                 #log_prob = tf.log(action_dist.prob(self.chosen_actions))
 
             # Handle negative rewards
-            advantage = abs(self.policy_advantage)*10
+            advantage = abs(self.policy_advantage)
             log_prob1 = action_dist.log_prob(self.chosen_actions)
             if True:
                 neg_rwd_mask = (tf.sign(self.policy_advantage)-1)/2 # 0 for pos, -1 for neg

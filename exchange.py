@@ -4,43 +4,13 @@ import math
 from process_data.utils import *
 
 DATA = ".\data\BTC_USD_100_FREQ.npy"
-#DATA = ".\data\BTC-USD_VERY_SHORT.npy"
-
-# Observe every state, but only act every few states?
-# Delay moves by several states
-
-# other features: weight losses more (to simulate risk aversion)
-# use a 2 second delay before transactions to simulate latency
-# Does the system need to learn it can't buy more coins if it has none? E.g. we could veto these trades;
-# or we could assume it's just saying "if I could buy, I would"; in either case, it will need to learn that
-# choosing a buy action without cash doesn't do anything, I think it should
-
-# State
-# Use LSTM to remember previous states
-# New information is: holdings, cash, price, % change in price, whether it was a market buy/sell
-# If using transaction level, can also include size of order
-
-# Transaction costs
-# Impose a transaction cost for market orders?
-# OR REQUIRE the model to take limit orders
-# ACTIONS ARE LIMIT ORDERS
-
-# Instead of policy/value, we know the best move at every instant -- tell it to do that instead
-
-
-# time_interval - each state is a X second period
 
 class Exchange:
     def __init__(self, data_stream, game_length, cash = 10000, holdings = 0, actions = [-1,1], time_interval = None,
-                 transaction_cost = 0, permit_short = False, naive_inputs = 3, naive_price_history =3):
-
-        '''
-        Expects a list of dictionaries with the key price
-            Can control network behavior with two main parameters:
-                1. how long to look back (e.g., past hour, past day, etc.)
-                2. how often to sample prices (e.g., get price every minute, get price every hour, etc.)
-                3. maybe get order book?
-        '''
+                 transaction_cost = 0, permit_short = False, naive_inputs = 3, naive_price_history =3, naive = True):
+        self.naive = naive
+        self.step_counter = 1
+        self.data_stream = data_stream
         # Game parameters
         self.number_of_input_types = naive_inputs
         self.number_of_input_prices_for_basic = naive_price_history
@@ -72,14 +42,41 @@ class Exchange:
         self.permit_short = permit_short
         self.margin_call = 0
         self.margin_requirement = 0
-        if not time_interval is None:
-            # print(self.data[0:30])
-            self.generate_prices_at_time(time_interval)
-            self.data = self.prices_at_time
 
-    def reset(self):
+    def step(self, a):
+            previous_value = self.get_value()
+            self.interpret_action(a, sample=False)
+            self.get_next_state() # go to next state to find reward of that move
+            current_value = self.get_value()
+            R = current_value - previous_value
+
+            self.step_counter += 1
+            return self.get_complete_state(), R, self.step_counter, 0
+
+    def copy(self):
+        new_exchange = Exchange(data_stream=self.data_stream, game_length=self.game_length)
+        new_exchange.__dict__ = self.__dict__.copy()
+        return new_exchange
+
+    def reset(self, state = None):
+        if state is None:
+            state = self.state_range[0]
+        self.step_counter = 1
         self.cash = self.starting_cash
         self.holdings = 0
+        self.goto_state(state)
+        return self.get_complete_state()
+
+    def get_complete_state(self):
+        if self.naive:
+            price_change = self.get_model_input_naive()
+        else:
+            price_change = np.asarray(self.log_prices[self.state] - self.log_prices[self.state-1])
+        ratio = self.get_perc_cash()
+        time_increment = self.data[self.state]["time"]-self.data[self.state-1]["time"]
+        side = self.data[self.state]["side"]
+        complete_state = np.concatenate([price_change.reshape(-1), np.asarray([ratio, time_increment, side])])
+        return complete_state
 
     def get_model_input(self, batch_size=1, price_range=None, exogenous=True):
         if price_range is None:
@@ -239,48 +236,6 @@ class Exchange:
         #basic = (basic - np.mean(basic)) #/(np.max(basic)-np.min(basic)) # normalize
         return input
 
-    # same as above, but can optionally define a list [0,10,50,100] of previous time steps, or a function
-    def get_price_history_func(self, current_id = None, n = 100, pattern=lambda x: x**2):
-        if type(pattern) == type([]):
-            if np.sum(pattern) > 0:
-                pattern = -pattern
-        else:
-            func = pattern
-            pattern = []
-            for x in range(0,n):
-                pattern.append(current_id-func(x))
-        return np.copy(self.data[pattern]["price"])
-
-    # look at prices every X seconds (rather than each transaction as a new state)
-    def generate_prices_at_time(self, seconds = 60, prices_only = False, interpolation = "repeat"):
-        current_time = self.data[0]["time"]
-        target = round_to_nearest(current_time, round_by=seconds)
-        previous_target = target
-        self.prices_at_time = [0]
-
-        for n, i in enumerate(self.data):
-            if i["time"] > target:
-                target = round_to_nearest(i["time"], seconds)
-                time_steps = int((target-previous_target)/seconds ) # number of missing time intervals
-
-                # Return list of prices only or index of complete transactions
-                next_item = [n] if not prices_only else [i["price"]]
-
-                # Interpolation if no transactions in interval
-                if interpolation == "repeat":
-                    self.prices_at_time += [self.prices_at_time[-1]]*time_steps + next_item
-                elif interpolation is None:
-                    self.prices_at_time += [None] * time_steps + next_item
-
-                previous_target = target
-                target += seconds
-
-        self.prices_at_time.pop(0)
-
-        if not prices_only:
-            #print(self.prices_at_time[0:30])
-            self.prices_at_time = np.copy(self.data[self.prices_at_time])
-
     def buy_security(self, coin = None, currency = None):
         assert (coin is None) != (currency is None)
 
@@ -312,6 +267,8 @@ class Exchange:
     def get_value(self):
         return self.cash + self.holdings*self.current_price
 
+    def get_profit(self):
+        return self.get_value() - self.starting_cash
     def get_perc_cash(self):
         return self.cash/self.get_value()
 
@@ -319,13 +276,9 @@ class Exchange:
     def get_perc_change(self):
         return self.current_price/self.data[self.state-1]["price"]
 
-    def interpret_action(self, action, sd, continuous = True, sample = True):
+    def interpret_action(self, action, sd=0, continuous = True, sample = True):
         # this normalizes action to [min, max]
-        raw_action = action
-        if continuous:
-            # action = 2*(action-np.average(self.actions))/(max(self.actions)-min(self.actions))
-            if sample:
-                raw_action = self.sample_from_action(action, sd)
+        raw_action = action[0]
         action = round( min(max(raw_action, -1), 1), 2) # round off, put action in acceptable range
 
         # Margin call
@@ -345,60 +298,9 @@ class Exchange:
         #print(self.get_status(), action)
         return raw_action # don't tell the model we rounded the recommendation
 
-    def sample_from_action(self, mean = 0, sd = 1):
-        sample = np.random.normal(mean, sd)
-        return sample
-
     def get_status(self):
         print("Cash {}, Holdings {}, Price {}, State {}".format(self.cash, self.holdings, self.current_price, self.state))
 
-def test_buying_and_selling(myExchange):
-    #print(x)
-    # action can be a vector -1 = 1
-    action = 2*(action-np.average(myExchange.actions))/(max(myExchange.actions)-min(myExchange.actions))
-    if action < 0:
-        myExchange.sell_security(coin = myExchange.holdings * abs(action))
-    elif action > 0:
-        myExchange.buy_security(currency = myExchange.cash * abs(action))
-
-def test_getting_prices(myExchange):
-    #x = myExchange.get_price_history_func(10000)
-
-
-    #x = myExchange.generate_log_prices(4, [myExchange.state, myExchange.state + 10])
-    #print(x[:10])
-    #print(myExchange.data[slice(myExchange.state, myExchange.state + 10)]["price"])
-
-    #print(myExchange.get_price_history(backsamples=1, freq=1))
-
-    # DOUBLE CHECK THIS IS RIGHT
-    print(myExchange.get_model_input_naive())
-
-def play_game_simple():
-    myExchange = Exchange(DATA, 1000, permit_short=True)
-
-    #myExchange.interpret_action( 1, sd=0)
-    myExchange.interpret_action( -1, sd=0)
-    print(myExchange.cash)
-    myExchange.get_next_state()
-    myExchange.get_next_state()
-    myExchange.get_next_state()
-
-def play_game():
-    #myExchange = Exchange(DATA, 1000, permit_short=False, cash=0, holdings=10000/245.2)
-    myExchange = Exchange(DATA, 1000, permit_short=True)
-    myExchange2 = Exchange(DATA, 1000, permit_short=True)
-    for x in range(0,20):
-        myExchange.get_next_state()
-        myExchange2.get_next_state()
-        print(myExchange.get_status())
-
-        myExchange.interpret_action((-1)**(x+1), sd=0)
-        myExchange2.interpret_action((-1)**(x), sd=0)
-        print(myExchange.current_price)
-    print(myExchange.get_status())
-    print(myExchange2.get_status())
-    print(myExchange.get_value() + myExchange2.get_value())
 if __name__ == "__main__":
     np.set_printoptions(formatter={'int_kind': lambda x: "{:0>3d}".format(x)})
     np.set_printoptions(formatter={'float_kind': lambda x: "{0:6.3f}".format(x)})

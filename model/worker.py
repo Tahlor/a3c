@@ -60,6 +60,11 @@ class Worker(Thread):
         # self.session = tf.Session(graph=self.local_model.graph)
         # self.loadNetworkFromSnapshot(model_file)
 
+    def copy(self):
+        new_exchange = Exchange()
+        new_exchange.__dict__ = self.__dict__.copy()
+        return new_exchange
+
     def loadNetworkFromSnapshot(self, model_file):
 
         with tf.Session(graph=self.global_model.graph) as sess:
@@ -85,7 +90,6 @@ class Worker(Thread):
             self.model.discount = 0
 
         if self.naive:
-
             input_tensor = self.exchange.get_model_input_naive() # BATCH X SEQ X (Price, Side)
             self.initial_gru_state = np.zeros([self.model.batch_size, self.model.layer_size]) # just feed it some 0's
 
