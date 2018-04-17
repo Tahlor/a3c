@@ -1,7 +1,7 @@
 import numpy as np
 import tensorflow as tf
 import math
-from process_data.utils import *
+#from process_data.utils import *
 import copy
 
 DATA = ".\data\BTC_USD_100_FREQ.npy"

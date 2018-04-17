@@ -13,6 +13,7 @@ from exchange import Exchange
 from utils import *
 import argparse
 import re
+from gru_class import  mygru
 
 # PARAMETERS
 USE_ONE_GRU = True
@@ -174,7 +175,9 @@ class ACNet(object):
         with tf.variable_scope('gru_' + name, reuse=reuse):
             gru_cells = []
             for _ in range(num_layers):
-                gru_cells.append(GRUCell(state_dim, activation=activation, kernel_initializer=kernel_initializer))
+                #GRUCell, mygru
+                #gru_cells.append(GRUCell(state_dim, activation=activation, kernel_initializer=kernel_initializer))
+                gru_cells.append(mygru(5, 1, state_dim ))
 
             gru = tf.nn.rnn_cell.MultiRNNCell(gru_cells)
             output, final_state = seq2seq.rnn_decoder(input, tuple(state_ph for _ in range(1)), gru)

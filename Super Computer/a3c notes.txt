@@ -19,8 +19,16 @@ pip install --user gym
 
 
 
+conda create --name conda3tf python=3
+source activate conda3tf
+
 
 sbatch ./train_gru2.sh
 
 
 python3 main.py --init "./checkpoints/3" --validate_only True
+
+update.entrydns.net
+
+cd /fslhome/tarch/compute/678/a3c
+python -u gru_main.py --new_folder "./MASTERGRU"
