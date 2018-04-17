@@ -1,5 +1,5 @@
 import tensorflow as tf
-import os
+import os, random
 import fnmatch
 import numpy as np
 import argparse
@@ -68,12 +68,13 @@ class nextState():
         self.reset()
         self.hold_out_game_number = 0
 
-
     def reset(self): # first valid state may not be 0, add it back in; multiply game index by game_length
         if self.no_random:
-            self.game_list = self.state_range[0] + range(0, self.game_numbers)
+            randy = random.Random()
+            offset = randy.randint(self.state_range[0], self.state_range[1] - self.game_length)
+            self.game_list = np.asarray([offset + i for i in range(0, self.game_numbers)])
         else:
-            self.game_list = self.state_range[0] + np.random.choice(self.game_numbers  , self.game_numbers , replace=False) * self.game_length
+            self.game_list = self.state_range[0] + np.random.choice(self.game_numbers, self.game_numbers , replace=False) * self.game_length
         self.current_game_idx = 0
 
     def get_next(self):
