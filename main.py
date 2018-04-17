@@ -10,8 +10,12 @@ from exchange import Exchange
 from utils import *
 
 # PARAMETERS
-SAVE_FOLDER = "./checkpoints"
 RESTORE_PATH = ""
+SAVE_FOLDER = "./checkpoints"
+if RESTORE_PATH!="":
+    SAVE_FOLDER = RESTORE_PATH
+else:
+    SAVE_FOLDER = createLogDir(basepath=SAVE_FOLDER)
 
 if not os.path.exists(SAVE_FOLDER):
     os.makedirs(SAVE_FOLDER)
@@ -167,7 +171,7 @@ class Worker(object):
         total_step = 1
         buffer_s, buffer_a, buffer_r = [], [], []
         while not coord.should_stop() and global_episodes < MAX_GLOBAL_EP:
-            start =  state_manager.get_next()
+            start = state_manager.get_next()
             end = start + MAX_EP_STEP
             s = self.env.reset(start)
             ep_r = 0
@@ -240,7 +244,7 @@ class Worker(object):
                             print ("sd", summary_dict["sd"][:,0])
                             print ("Mu", summary_dict["mu"][:,0])
 
-                    if global_episodes % 10 == 0:
+                    if global_episodes % 100 == 0:
                         log(SUMMARY_WRITER, "profit", profit, global_episodes)
                         log(SUMMARY_WRITER, "a_loss", summary_dict["a_loss"], global_episodes)
                         log(SUMMARY_WRITER, "c_loss", summary_dict["c_loss"], global_episodes)
