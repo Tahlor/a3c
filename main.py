@@ -362,15 +362,18 @@ if __name__ == "__main__":
     saver = tf.train.Saver(tf.global_variables())
     if RESTORE_PATH != "":
         ckpt = tf.train.get_checkpoint_state(RESTORE_PATH )
-        saver.restore(sess, ckpt.model_checkpoint_path)
-        #global_episodes = int(re.search("(-)([0-9]+)(\.)", os.path.basename(ckpt.model_checkpoint_path)).group(2)) # scrape step pointer
-        global_episodes = int(os.path.basename(ckpt.model_checkpoint_path).split('-')[1])
+        try:
+            saver.restore(sess, ckpt.model_checkpoint_path)
+            global_episodes = int(os.path.basename(ckpt.model_checkpoint_path).split('-')[1])
+        except:
+            print("Could not restore")
 
 
 
     if not args.validate_only: # don't do full training
         if OUTPUT_GRAPH:  # write log file
             SUMMARY_WRITER.add_graph(sess.graph)
+
 
         worker_threads = []
         for worker in workers:  # start workers
@@ -380,5 +383,10 @@ if __name__ == "__main__":
             worker_threads.append(t)
             #workers[1].get_status()
         coord.join(worker_threads)  # wait for termination of workers
+    else:
+        # should load which states, bleh
+        state_manager = nextState(main_exchange.state_range, game_length=1000, hold_out_list=[30000*x for x in range(1,100)],
+                                  number_of_holdouts=NUMBER_OF_HOLDOUTS)
+
     run_validation(sess, global_ac)
     # graph()

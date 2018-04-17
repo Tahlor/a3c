@@ -20,6 +20,7 @@ pip install --user gym
 
 
 
+sbatch ./train_gru2.sh
 
 
 python3 main.py --init "./checkpoints/3" --validate_only True

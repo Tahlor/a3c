@@ -15,6 +15,7 @@ import argparse
 import re
 
 # PARAMETERS
+USE_ONE_GRU = True
 RESTORE_PATH = ""
 
 parser = argparse.ArgumentParser()
@@ -29,8 +30,8 @@ parser.add_argument('--new_folder', type=str, default="",
 
 args = parser.parse_args()
 
-SAVE_FREQ = 5000 # for model checkpoints
-PRINT_FREQ = 100
+SAVE_FREQ = 1000 # for model checkpoints
+PRINT_FREQ = 50
 
 NEGATIVE_REWARD = False # naive
 value_activation = None if NEGATIVE_REWARD else tf.nn.relu
@@ -39,12 +40,13 @@ PERMIT_SHORT = True
 A_BOUND = [x*.9 for x in [-1, 1.0]]  # action bounds
 
 ACTOR_NODES = 200 #200
-CRITIC_NODES = 100 #100
+CRITIC_NODES = 200 #100
 
 OUTPUT_GRAPH = False # safe logs
 RENDER = True  # render one worker
 LOG_DIR = './log'  # savelocation for logs
-N_WORKERS = multiprocessing.cpu_count()  # number of workers
+N_WORKERS = int(multiprocessing.cpu_count()/2)  # number of workers
+N_WORKERS = int(multiprocessing.cpu_count())
 MAX_EP_STEP = 10000  # maxumum number of steps per episode
 MAX_GLOBAL_EP = 1000000  # total number of episodes
 GLOBAL_NET_SCOPE = 'Global_Net'
@@ -71,7 +73,7 @@ global_state_manager = nextState(main_exchange.state_range, game_length=MAX_EP_S
 N_S = (main_exchange.get_complete_state().shape)[0]  # number of states
 N_A = 1  # number of actions
 
-
+EXPLICIT_CPU = True
 RESTORE_PATH = args.init
 
 # PARAMETERS
@@ -195,8 +197,14 @@ class ACNet(object):
             if USE_NAIVE:
                 l_c = tf.layers.dense(self.s, CRITIC_NODES, tf.nn.relu6, kernel_initializer=w_init, name='lc')
             else:
-                self.c_gru_state_ph = tf.placeholder(tf.float32, shape=[None, CRITIC_NODES], name='c_gru_state')
-                l_c = self.get_gru([self.s], self.c_gru_state_ph, N_LAYERS, CRITIC_NODES, activation=tf.nn.relu6, kernel_initializer=w_init, name='lc')
+                if USE_ONE_GRU:
+                    self.c_gru_state_ph = self.a_gru_state_ph
+                    l_c = l_a
+                else:
+                    self.c_gru_state_ph = tf.placeholder(tf.float32, shape=[None, CRITIC_NODES], name='c_gru_state')
+                    l_c = self.get_gru([self.s], self.c_gru_state_ph, N_LAYERS, CRITIC_NODES, activation=tf.nn.relu6,
+                                       kernel_initializer=w_init, name='lc')
+
             v = tf.layers.dense(l_c, 1, value_activation, kernel_initializer=w_init, name='v')  # estimated value for state
         a_params = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=scope + '/actor')
         c_params = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=scope + '/critic')
@@ -208,14 +216,16 @@ class ACNet(object):
     def pull_global(self):  # run by a local
         self.sess.run([self.pull_a_params_op, self.pull_c_params_op])
 
-    def choose_action(self, s, a_state, c_state, sample = True):  # run by a local
+    def choose_action(self, s, a_state, c_state = None, sample = True):  # run by a local
         s = s[np.newaxis, :]
-        if sample:
-            a_return, a_state_return, c_state_return = self.sess.run([self.A, self.a_state, self.c_state], {self.s: s, self.a_gru_state_ph: a_state, self.c_gru_state_ph: c_state})
+        a = self.A if sample else self.A_mu
+        if c_state is None:
+            feed_dict = {self.s: s, self.a_gru_state_ph: a_state}
+            a_return, a_state_return = self.sess.run([a, self.a_state], feed_dict)
+            c_state_return = a_state_return
         else:
-            a_return, a_state_return, c_state_return = self.sess.run([self.A_mu, self.a_state, self.c_state],
-                                                                     {self.s: s, self.a_gru_state_ph: a_state,
-                                                                      self.c_gru_state_ph: c_state})
+            feed_dict = {self.s: s, self.a_gru_state_ph: a_state, self.c_gru_state_ph: c_state}
+            a_return, a_state_return, c_state_return = self.sess.run([a, self.a_state, self.c_state],feed_dict)
         return a_return[0], a_state_return, c_state_return
 
 
@@ -238,6 +248,8 @@ class Worker(object):
         total_step = 1
         a_state = np.zeros([1, ACTOR_NODES])
         c_state = np.zeros([1, CRITIC_NODES])
+        if USE_ONE_GRU:
+            c_state = None
         buffer_s, buffer_a, buffer_r, buffer_a_state, buffer_c_state = [], [], [], [], []
         while not coord.should_stop() and global_episodes < MAX_GLOBAL_EP:
             start = self.state_manager.get_next()
@@ -317,7 +329,7 @@ class Worker(object):
                             print ("sd", summary_dict["sd"][:,0])
                             print ("Mu", summary_dict["mu"][:,0])
 
-                    if global_episodes % 50 == 0:
+                    if global_episodes % 20 == 0:
                         log(SUMMARY_WRITER, "profit", profit, global_episodes)
                         log(SUMMARY_WRITER, "a_loss", summary_dict["a_loss"], global_episodes)
                         log(SUMMARY_WRITER, "c_loss", summary_dict["c_loss"], global_episodes)
@@ -348,7 +360,10 @@ def run_validation(sess, globalAC):
     sess.run(tf.global_variables_initializer())
     buy_and_hold_list = []
     bot_profit_list = []
-
+    a_state = np.zeros([1, ACTOR_NODES])
+    c_state = np.zeros([1, CRITIC_NODES])
+    if USE_ONE_GRU:
+        c_state = None
     for holdout in range(0, NUMBER_OF_HOLDOUTS):
         if holdout % 10 == 0:
             print("Running game {}...".format(holdout))
@@ -360,7 +375,7 @@ def run_validation(sess, globalAC):
 
         local_profit = 0
         for ep_t in range(MAX_EP_STEP):
-            a = [AC.choose_action(s, sample = False)]  # estimate stochastic action based on policy
+            [a],_,_ = AC.choose_action(s, a_state=a_state, c_state=c_state, sample = False)  # estimate stochastic action based on policy
 
             # Return State, Reward, _, _
             s_, r, done, info = env.step(a)
@@ -379,7 +394,15 @@ if __name__ == "__main__":
     profits_above_baseline = []
     sess = tf.Session()
 
-    with tf.device("/cpu:0"):
+    if EXPLICIT_CPU:
+        with tf.device("/cpu:0"):
+            global_ac = ACNet(GLOBAL_NET_SCOPE, sess)  # we only need its params
+            workers = []
+            # Create workers
+            for i in range(N_WORKERS):
+                i_name = 'W_%i' % i  # worker name
+                workers.append(Worker(i_name, global_ac, sess))
+    else:
         global_ac = ACNet(GLOBAL_NET_SCOPE, sess)  # we only need its params
         workers = []
         # Create workers
@@ -393,9 +416,12 @@ if __name__ == "__main__":
     saver = tf.train.Saver(tf.global_variables())
     if RESTORE_PATH != "":
         ckpt = tf.train.get_checkpoint_state(RESTORE_PATH )
-        saver.restore(sess, ckpt.model_checkpoint_path)
-        #global_episodes = int(re.search("(-)([0-9]+)(\.)", os.path.basename(ckpt.model_checkpoint_path)).group(2)) # scrape step pointer
-        global_episodes = int(os.path.basename(ckpt.model_checkpoint_path).split('-')[1])
+        try:
+            saver.restore(sess, ckpt.model_checkpoint_path)
+            global_episodes = int(os.path.basename(ckpt.model_checkpoint_path).split('-')[1])
+        except:
+            print("Could not restore")
+
 
 
 
@@ -411,5 +437,9 @@ if __name__ == "__main__":
             worker_threads.append(t)
             #workers[1].get_status()
         coord.join(worker_threads)  # wait for termination of workers
+    else:
+        # should load which states, bleh
+        state_manager = nextState(main_exchange.state_range, game_length=1000, hold_out_list=[30000*x for x in range(1,100)],
+                                  number_of_holdouts=NUMBER_OF_HOLDOUTS)
     run_validation(sess, global_ac)
     # graph()
