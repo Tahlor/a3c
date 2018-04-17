@@ -6,43 +6,18 @@ import os
 import shutil
 import matplotlib.pyplot as plt
 import tensorflow as tf
-
-from tensorflow.contrib.rnn import GRUCell
-import tensorflow.contrib.legacy_seq2seq as seq2seq
 from exchange import Exchange
 from utils import *
-import argparse
-import re
-
-#def setup_parameters():
-
-RESTORE_PATH = ""
-
-parser = argparse.ArgumentParser()
-parser.add_argument('--init', type=str, default=RESTORE_PATH,
-                    help='initialize from old model')
-
-parser.add_argument('--validate_only', type=str2bool, default=False,
-                    help="don't train, just validate")
-
-parser.add_argument('--new_folder', type=str, default="",
-                    help="specify special folder")
-
-args = parser.parse_args()
-RESTORE_PATH = args.init
 
 # PARAMETERS
 SAVE_FOLDER = "./checkpoints"
-if RESTORE_PATH!="":
-    SAVE_FOLDER = RESTORE_PATH
-else:
-    SAVE_FOLDER = createLogDir(basepath=SAVE_FOLDER)
+RESTORE_PATH = ""
 
 if not os.path.exists(SAVE_FOLDER):
     os.makedirs(SAVE_FOLDER)
 
 checkpoint_path = os.path.join(SAVE_FOLDER, 'model.ckpt')
-SAVE_FREQ = 5000 # for model checkpoints
+SAVE_FREQ = 10000 # for model checkpoints
 PRINT_FREQ = 100
 
 NEGATIVE_REWARD = False # naive
@@ -59,21 +34,19 @@ RENDER = True  # render one worker
 LOG_DIR = './log'  # savelocation for logs
 N_WORKERS = multiprocessing.cpu_count()  # number of workers
 MAX_EP_STEP = 1000  # maxumum number of steps per episode
-MAX_GLOBAL_EP = 1000000  # total number of episodes
+MAX_GLOBAL_EP = 100000  # total number of episodes
 GLOBAL_NET_SCOPE = 'Global_Net'
 UPDATE_GLOBAL_ITER = MAX_EP_STEP/10  # sets how often the global net is updated (e.g. more often than 1 game)
 GAMMA = 0.1  # discount factor
 ENTROPY_BETA = 0.01  # entropy factor
 LR_A = 0.0001  # learning rate for actor
 LR_C = 0.001  # learning rate for critic
-N_LAYERS = 1 # number of layers in GRU implementation
-USE_NAIVE = False
 
 NUMBER_OF_NAIVE_INPUTS = 1
 NAIVE_LOOKBACK = 10
-NUMBER_OF_HOLDOUTS = 100
+NUMBER_OF_HOLDOUTS = 30
 
-DATA = r"./data/BTC_USD_10_FREQ.npy"
+DATA = r"./data/BTC_USD_100_FREQ.npy"
 main_exchange = Exchange(DATA, time_interval=1, game_length=MAX_EP_STEP, naive_price_history=NAIVE_LOOKBACK,naive_inputs=NUMBER_OF_NAIVE_INPUTS, permit_short=PERMIT_SHORT, naive= True)
 state_manager = nextState(main_exchange.state_range, game_length=MAX_EP_STEP, hold_out_list = None, number_of_holdouts=NUMBER_OF_HOLDOUTS)
 STARTING_STATE = state_manager.get_next()
@@ -87,22 +60,10 @@ print(main_exchange.vanilla_prices[STARTING_STATE:STARTING_STATE+MAX_EP_STEP+1])
 N_S = (main_exchange.get_complete_state().shape)[0]  # number of states
 N_A = 1  # number of actions
 
-## Make a whole new folder
-if args.new_folder != "":
-    train_dir = args.new_folder
-    SAVE_FOLDER = args.new_folder
-
-    # Make folder if it does not exist
-    if not os.path.exists(SAVE_FOLDER):
-        os.makedirs(SAVE_FOLDER)
-    else:
-        RESTORE_PATH = SAVE_FOLDER
-else:
-    train_dir = createLogDir(basepath=LOG_DIR)
-
+train_dir = createLogDir(basepath=LOG_DIR)
 SUMMARY_WRITER = tf.summary.FileWriter(train_dir)
 
-    #globals().update(locals())
+
 
 # Network for the Actor Critic
 class ACNet(object):
@@ -114,14 +75,14 @@ class ACNet(object):
         if scope == GLOBAL_NET_SCOPE:  # get global network
             with tf.variable_scope(scope):
                 self.s = tf.placeholder(tf.float32, [None, N_S], 'S')  # state
-                self.a_state, self.c_state, self.a_params, self.c_params = self._build_net(scope)[-4:]  # parameters of actor and critic net
+                self.a_params, self.c_params = self._build_net(scope)[-2:]  # parameters of actor and critic net
         else:  # local net, calculate losses
             with tf.variable_scope(scope):
                 self.s = tf.placeholder(tf.float32, [None, N_S], 'S')  # state
                 self.a_his = tf.placeholder(tf.float32, [None, N_A], 'A')  # action
                 self.v_target = tf.placeholder(tf.float32, [None, 1], 'Vtarget')  # v_target value
 
-                mu, sigma, self.v, self.a_state, self.c_state, self.a_params, self.c_params = self._build_net(
+                mu, sigma, self.v, self.a_params, self.c_params = self._build_net(
                     scope)  # get mu and sigma of estimated action from neural net
 
                 td = tf.subtract(self.v_target, self.v, name='TD_error')
@@ -131,7 +92,7 @@ class ACNet(object):
 
 
                 with tf.name_scope('wrap_a_out'):
-                    mu, sigma = mu * A_BOUND[1], tf.minimum(sigma + 1e-4, 1.5)
+                    mu, sigma = mu * A_BOUND[1], tf.minimum(sigma + 1e-4, 2)
 
                 normal_dist = tf.contrib.distributions.Normal(mu, sigma)
 
@@ -168,39 +129,19 @@ class ACNet(object):
 
             self.summary_dict = {"a_loss":self.a_loss, "c_loss": self.c_loss, "mu":mu, "sd":sigma}
 
-    def get_gru(self, input, state_ph, num_layers, state_dim, reuse=False, activation=tf.nn.relu6, kernel_initializer=tf.random_normal_initializer, name='0'):
-        with tf.variable_scope('gru_' + name, reuse=reuse):
-            gru_cells = []
-            for _ in range(num_layers):
-                gru_cells.append(GRUCell(state_dim, activation=activation, kernel_initializer=kernel_initializer))
-
-            gru = tf.nn.rnn_cell.MultiRNNCell(gru_cells)
-            output, final_state = seq2seq.rnn_decoder(input, tuple(state_ph for _ in range(1)), gru)
-
-        return final_state[0]
-
     def _build_net(self, scope):  # neural network structure of the actor and critic
         w_init = tf.random_normal_initializer(0., .1)
         with tf.variable_scope('actor'):
-            if USE_NAIVE:
-                l_a = tf.layers.dense(self.s, ACTOR_NODES, tf.nn.relu6, kernel_initializer=w_init, name='la')
-            else:
-                self.a_gru_state_ph = tf.placeholder(tf.float32, shape=[None, ACTOR_NODES], name='a_gru_state')
-                l_a = self.get_gru([self.s], self.a_gru_state_ph, N_LAYERS, ACTOR_NODES, activation=tf.nn.relu6, kernel_initializer=w_init, name='la')
-
+            l_a = tf.layers.dense(self.s, ACTOR_NODES, tf.nn.relu6, kernel_initializer=w_init, name='la')
             mu = tf.layers.dense(l_a, N_A, tf.nn.tanh, kernel_initializer=w_init, name='mu')  # estimated action value
             sigma = tf.layers.dense(l_a, N_A, tf.nn.softplus, kernel_initializer=w_init,
                                     name='sigma')  # estimated variance
         with tf.variable_scope('critic'):
-            if USE_NAIVE:
-                l_c = tf.layers.dense(self.s, CRITIC_NODES, tf.nn.relu6, kernel_initializer=w_init, name='lc')
-            else:
-                self.c_gru_state_ph = tf.placeholder(tf.float32, shape=[None, CRITIC_NODES], name='c_gru_state')
-                l_c = self.get_gru([self.s], self.c_gru_state_ph, N_LAYERS, CRITIC_NODES, activation=tf.nn.relu6, kernel_initializer=w_init, name='lc')
+            l_c = tf.layers.dense(self.s, CRITIC_NODES, tf.nn.relu6, kernel_initializer=w_init, name='lc')
             v = tf.layers.dense(l_c, 1, value_activation, kernel_initializer=w_init, name='v')  # estimated value for state
         a_params = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=scope + '/actor')
         c_params = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=scope + '/critic')
-        return mu, sigma, v, l_a, l_c, a_params, c_params
+        return mu, sigma, v, a_params, c_params
 
     def update_global(self, feed_dict):  # run by a local
         return self.sess.run([self.summary_dict, self.update_a_op, self.update_c_op], feed_dict)  # local grads applies to global net
@@ -208,11 +149,9 @@ class ACNet(object):
     def pull_global(self):  # run by a local
         self.sess.run([self.pull_a_params_op, self.pull_c_params_op])
 
-    def choose_action(self, s, a_state, c_state):  # run by a local
+    def choose_action(self, s):  # run by a local
         s = s[np.newaxis, :]
-        a_return, a_state_return, c_state_return = self.sess.run([self.A, self.a_state, self.c_state], {self.s: s, self.a_gru_state_ph: a_state, self.c_gru_state_ph: c_state})
-        return a_return[0], a_state_return, c_state_return
-
+        return self.sess.run(self.A, {self.s: s})[0]
 
 
 # worker class that inits own environment, trains on it and updloads weights to global net
@@ -226,11 +165,9 @@ class Worker(object):
     def work(self):
         global global_rewards, global_episodes, profits, state_manager, profits_above_baseline
         total_step = 1
-        a_state = np.zeros([1, ACTOR_NODES])
-        c_state = np.zeros([1, CRITIC_NODES])
-        buffer_s, buffer_a, buffer_r, buffer_a_state, buffer_c_state = [], [], [], [], []
+        buffer_s, buffer_a, buffer_r = [], [], []
         while not coord.should_stop() and global_episodes < MAX_GLOBAL_EP:
-            start = state_manager.get_next()
+            start =  state_manager.get_next()
             end = start + MAX_EP_STEP
             s = self.env.reset(start)
             ep_r = 0
@@ -239,7 +176,7 @@ class Worker(object):
                 #if self.name == 'W_0' and RENDER:
                 #    self.env.render()
 
-                a, a_state, c_state = self.AC.choose_action(s, a_state, c_state)  # estimate stochastic action based on policy
+                a = self.AC.choose_action(s)  # estimate stochastic action based on policy
 
                 # Return State, Reward, _, _
                 s_, r, done, info = self.env.step(a)  # make step in environment
@@ -254,31 +191,27 @@ class Worker(object):
                 buffer_a.append(a)
                 #buffer_r.append((r + 8) / 8)  # normalize reward
                 buffer_r.append(r)
-                buffer_a_state.append(np.copy(a_state))
-                buffer_c_state.append(np.copy(c_state))
 
                 if total_step % UPDATE_GLOBAL_ITER == 0 or done:  # update global and assign to local net
                     if done:
                         v_s_ = 0  # terminal
                     else:
-                        v_s_ = self.sess.run(self.AC.v, {self.AC.s: s_[np.newaxis, :], self.AC.c_gru_state_ph: c_state})[0, 0]
+                        v_s_ = self.sess.run(self.AC.v, {self.AC.s: s_[np.newaxis, :]})[0, 0]
                     buffer_v_target = []
                     for r in buffer_r[::-1]:  # reverse buffer r
                         v_s_ = r + GAMMA * v_s_
                         buffer_v_target.append(v_s_)
                     buffer_v_target.reverse()
 
-                    buffer_s, buffer_a, buffer_v_target, buffer_a_state, buffer_c_state = np.vstack(buffer_s), np.vstack(buffer_a), np.vstack(
-                        buffer_v_target), np.vstack(buffer_a_state), np.vstack(buffer_c_state)
+                    buffer_s, buffer_a, buffer_v_target = np.vstack(buffer_s), np.vstack(buffer_a), np.vstack(
+                        buffer_v_target)
                     feed_dict = {
                         self.AC.s: buffer_s,
                         self.AC.a_his: buffer_a,
                         self.AC.v_target: buffer_v_target,
-                        self.AC.a_gru_state_ph: buffer_a_state,
-                        self.AC.c_gru_state_ph: buffer_c_state
                     }
                     summary_dict, _, _ = self.AC.update_global(feed_dict)  # actual training step, update global ACNet
-                    buffer_s, buffer_a, buffer_r, buffer_a_state, buffer_c_state = [], [], [], [], []
+                    buffer_s, buffer_a, buffer_r = [], [], []
                     self.AC.pull_global()  # get global parameters to local ACNet
 
                 s = s_
@@ -307,7 +240,7 @@ class Worker(object):
                             print ("sd", summary_dict["sd"][:,0])
                             print ("Mu", summary_dict["mu"][:,0])
 
-                    if global_episodes % 50 == 0:
+                    if global_episodes % 10 == 0:
                         log(SUMMARY_WRITER, "profit", profit, global_episodes)
                         log(SUMMARY_WRITER, "a_loss", summary_dict["a_loss"], global_episodes)
                         log(SUMMARY_WRITER, "c_loss", summary_dict["c_loss"], global_episodes)
@@ -332,7 +265,7 @@ def graph():
     plt.show()
 
 def run_validation(sess, globalAC):
-    print("Running validation...")
+
     env = main_exchange.copy()  # make environment for each worker
     AC = ACNet("validation", sess, globalAC)  # create ACNet for each worker
     sess.run(tf.global_variables_initializer())
@@ -340,8 +273,6 @@ def run_validation(sess, globalAC):
     bot_profit_list = []
 
     for holdout in range(0, NUMBER_OF_HOLDOUTS):
-        if holdout % 10 == 0:
-            print("Running game {}...".format(holdout))
         start = state_manager.get_validation()
         end = start + MAX_EP_STEP
         s = env.reset(start)
@@ -384,23 +315,18 @@ if __name__ == "__main__":
     if RESTORE_PATH != "":
         ckpt = tf.train.get_checkpoint_state(RESTORE_PATH )
         saver.restore(sess, ckpt.model_checkpoint_path)
-        #global_episodes = int(re.search("(-)([0-9]+)(\.)", os.path.basename(ckpt.model_checkpoint_path)).group(2)) # scrape step pointer
-        global_episodes = int(os.path.basename(ckpt.model_checkpoint_path).split('-')[1])
-
-        #global_episodes = tf.train.global_step()
 
 
-    if not args.validate_only: # don't do full training
-        if OUTPUT_GRAPH:  # write log file
-            SUMMARY_WRITER.add_graph(sess.graph)
+    if OUTPUT_GRAPH:  # write log file
+        SUMMARY_WRITER.add_graph(sess.graph)
 
-        worker_threads = []
-        for worker in workers:  # start workers
-            job = lambda: worker.work()
-            t = threading.Thread(target=job)
-            t.start()
-            worker_threads.append(t)
-            #workers[1].get_status()
-        coord.join(worker_threads)  # wait for termination of workers
+    worker_threads = []
+    for worker in workers:  # start workers
+        job = lambda: worker.work()
+        t = threading.Thread(target=job)
+        t.start()
+        worker_threads.append(t)
+        #workers[1].get_status()
+    coord.join(worker_threads)  # wait for termination of workers
     run_validation(sess, global_ac)
     # graph()
