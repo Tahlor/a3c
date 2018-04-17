@@ -2,6 +2,7 @@ import numpy as np
 import tensorflow as tf
 import math
 from process_data.utils import *
+import copy
 
 DATA = ".\data\BTC_USD_100_FREQ.npy"
 
@@ -69,8 +70,9 @@ class Exchange:
             return self.get_complete_state(), R, self.step_counter, 0
 
     def copy(self):
-        new_exchange = Exchange(data_stream=self.data_stream, game_length=self.game_length)
-        new_exchange.__dict__ = self.__dict__.copy()
+        #new_exchange = Exchange(data_stream=self.data_stream, game_length=self.game_length)
+        #new_exchange.__dict__ = self.__dict__.copy()
+        new_exchange = copy.deepcopy(self)
         return new_exchange
 
     def reset(self, state = None):

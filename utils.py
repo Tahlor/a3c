@@ -2,6 +2,7 @@ import tensorflow as tf
 import os, random
 import fnmatch
 import numpy as np
+import argparse
 
 def log_scalar(tag, value, step):
     """Log a scalar variable.
@@ -96,3 +97,11 @@ class nextState():
 
     def get_current_game(self):
         return self.game_list[self.current_game_idx]
+
+def str2bool(v):
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
