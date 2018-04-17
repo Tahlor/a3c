@@ -26,19 +26,7 @@ parser.add_argument('--new_folder', type=str, default="",
                     help="specify special folder")
 
 args = parser.parse_args()
-RESTORE_PATH = args.init
 
-# PARAMETERS
-SAVE_FOLDER = "./checkpoints"
-if RESTORE_PATH!="":
-    SAVE_FOLDER = RESTORE_PATH
-else:
-    SAVE_FOLDER = createLogDir(basepath=SAVE_FOLDER)
-
-if not os.path.exists(SAVE_FOLDER):
-    os.makedirs(SAVE_FOLDER)
-
-checkpoint_path = os.path.join(SAVE_FOLDER, 'model.ckpt')
 SAVE_FREQ = 5000 # for model checkpoints
 PRINT_FREQ = 100
 
@@ -69,8 +57,10 @@ NAIVE_LOOKBACK = 10
 NUMBER_OF_HOLDOUTS = 100
 
 DATA = r"./data/BTC_USD_10_FREQ.npy"
-main_exchange = Exchange(DATA, time_interval=1, game_length=MAX_EP_STEP, naive_price_history=NAIVE_LOOKBACK,naive_inputs=NUMBER_OF_NAIVE_INPUTS, permit_short=PERMIT_SHORT, naive= True)
+main_exchange = Exchange(data_stream=DATA, time_interval=1, game_length=MAX_EP_STEP, naive_price_history=NAIVE_LOOKBACK,naive_inputs=NUMBER_OF_NAIVE_INPUTS, permit_short=PERMIT_SHORT, naive= True)
 state_manager = nextState(main_exchange.state_range, game_length=MAX_EP_STEP, hold_out_list = None, number_of_holdouts=NUMBER_OF_HOLDOUTS)
+
+
 STARTING_STATE = state_manager.get_next()
 print(STARTING_STATE)
 main_exchange.reset(STARTING_STATE)
@@ -81,6 +71,19 @@ print(main_exchange.vanilla_prices[STARTING_STATE:STARTING_STATE+MAX_EP_STEP+1])
 
 N_S = (main_exchange.get_complete_state().shape)[0]  # number of states
 N_A = 1  # number of actions
+
+
+RESTORE_PATH = args.init
+
+# PARAMETERS
+SAVE_FOLDER = "./checkpoints"
+if RESTORE_PATH!="":
+    SAVE_FOLDER = RESTORE_PATH
+else:
+    SAVE_FOLDER = createLogDir(basepath=SAVE_FOLDER)
+if not os.path.exists(SAVE_FOLDER):
+    os.makedirs(SAVE_FOLDER)
+
 
 ## Make a whole new folder
 if args.new_folder != "":
@@ -95,6 +98,7 @@ if args.new_folder != "":
 else:
     train_dir = createLogDir(basepath=LOG_DIR)
 
+checkpoint_path = os.path.join(SAVE_FOLDER, 'model.ckpt')
 SUMMARY_WRITER = tf.summary.FileWriter(train_dir)
 
     #globals().update(locals())
@@ -148,6 +152,8 @@ class ACNet(object):
                 with tf.name_scope('choose_a'):  # use local params to choose action
                     self.A = tf.clip_by_value(tf.squeeze(normal_dist.sample(1), axis=0), A_BOUND[0],
                                               A_BOUND[1])  # sample a action from distribution
+                    self.A_mu = tf.squeeze(mu, axis=0)
+
                 with tf.name_scope('local_grad'):
                     self.a_grads = tf.gradients(self.a_loss,
                                                 self.a_params)  # calculate gradients for the network weights
@@ -183,10 +189,12 @@ class ACNet(object):
     def pull_global(self):  # run by a local
         self.sess.run([self.pull_a_params_op, self.pull_c_params_op])
 
-    def choose_action(self, s):  # run by a local
+    def choose_action(self, s, sample = True):  # run by a local
         s = s[np.newaxis, :]
-        return self.sess.run(self.A, {self.s: s})[0]
-
+        if sample:
+            return self.sess.run(self.A, {self.s: s})[0]
+        else:
+            return self.sess.run(self.A_mu, {self.s: s})[0]
 
 # worker class that inits own environment, trains on it and updloads weights to global net
 class Worker(object):
@@ -317,7 +325,7 @@ def run_validation(sess, globalAC):
 
         local_profit = 0
         for ep_t in range(MAX_EP_STEP):
-            a = AC.choose_action(s)  # estimate stochastic action based on policy
+            a = [AC.choose_action(s, sample = False)]  # estimate stochastic action based on policy
 
             # Return State, Reward, _, _
             s_, r, done, info = env.step(a)

@@ -26,6 +26,9 @@ class Exchange:
         self.log_price_changes = self.log_prices[1:] - self.log_prices[0:-1]
         self.gru_prime_length = self.game_length
 
+        self.time_intervals = np.insert(self.whiten(np.log(self.data[1:]["time"] -self.data[:-1]["time"] + 1e-1 )), 0, [0])
+
+
         min_state = min(self.naive_sample_pattern + [self.gru_prime_length, 10])  # don't start at 0, make sure we can go back in time etc.
         max_state = len(self.log_prices) - self.game_length - 10  # give us a small buffer
         self.state_range = [min_state, max_state]
@@ -92,10 +95,10 @@ class Exchange:
         else:
             price_change = np.asarray(self.log_prices[self.state] - self.log_prices[self.state-1])
         ratio = self.get_perc_cash() - .5
-        time_increment = self.data[self.state]["time"]-self.data[self.state-1]["time"]
         side = self.data[self.state]["side"] - .5
-        #complete_state = np.concatenate([price_change.reshape(-1), np.asarray([ratio, time_increment, side])])
-        complete_state = np.concatenate([price_change.reshape(-1), np.asarray([ratio])])
+        size = np.log(max( 1e-2, self.data[self.state]["amount"]))
+        complete_state = np.concatenate([price_change.reshape(-1), np.asarray([ratio, self.time_intervals[self.state], side, size])])
+        #complete_state = np.concatenate([price_change.reshape(-1), np.asarray([ratio])])
         if verbose:
             print(complete_state)
         return complete_state
@@ -305,25 +308,17 @@ class Exchange:
 
     def interpret_action(self, action, sd=0, continuous = True, sample = True):
         # this normalizes action to [min, max]
-        raw_action = action[0]
-        action = round( min(max(raw_action, -1), 1), 2) # round off, put action in acceptable range
-
-        # Margin call
-        if self.permit_short and self.get_value() < self.margin_call*self.starting_cash and self.holdings < 0:
-            # close all negative positions if value < 1000
-            self.buy_security(coin=-self.holdings)
-            return action
+        action = action[0]
 
         if action < 0:
-            if not self.permit_short:
+            if not self.permit_short or True:
                 self.sell_security(coin = self.holdings * abs(action))
             else: # if agent can short, he can short all but 20% of his initial balance
                 self.sell_security(coin=((self.get_value() - self.margin_requirement*self.starting_cash)/self.current_price) * abs(action))
         elif action > 0:
             self.buy_security(currency = self.cash * abs(action))
-        #print(action)
-        #print(self.get_status(), action)
-        return raw_action # don't tell the model we rounded the recommendation
+
+        return action # don't tell the model we rounded the recommendation
 
     def get_status(self):
         print("Cash {}, Holdings {}, Price {}, State {}".format(self.cash, self.holdings, self.current_price, self.state))

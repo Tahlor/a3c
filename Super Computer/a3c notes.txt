@@ -1,7 +1,8 @@
 salloc --mem 32000M --time 2:00:00 --gres=gpu:2
 
-export PATH=~/anaconda3/bin:$PATH
+module purge
 module load anaconda/3/4.3.1
+export PATH=~/anaconda3/bin:$PATH
 source activate conda3
 
 
@@ -14,3 +15,11 @@ python3 main.py --init "./checkpoints/10"
 # Install
 module load anaconda/3/4.3.1
 pip install --user gym
+
+
+
+
+
+
+
+python3 main.py --init "./checkpoints/3" --validate_only True

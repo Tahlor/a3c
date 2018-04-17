@@ -6,7 +6,7 @@ from io import StringIO
 import csv
 import os
 import shutil
-from .utils import *
+from utils import *
 
 from datetime import datetime
 datetime_object = datetime.strptime('Jun 1 2005  1:33PM', '%b %d %Y %I:%M%p')
@@ -26,12 +26,11 @@ class TradeData:
 
         # Open CSV
         if self.input_path[-4:] == ".csv":
-            #self.load_csv()
+            # self.load_csv()
 
             # Load as numpy
-            self.data = np.genfromtxt(self.input_path, names="price, side, amount, time", dtype="float16, byte, float16, float64", delimiter=',',
-                                   usecols=(1, 2, 3, 4), unpack=True, skip_header=1,
-                                   converters={2:buy_sell_encoder, 4: getDateTimeFromISO8601String})
+            self.data = np.genfromtxt(self.input_path, names="price, side, amount, time", dtype="float64, int, float64, int", delimiter=',',
+                                   usecols=(1, 2, 3, 4), unpack=True, skip_header=1)
         # Open a Numpy thing
         else:
             self.data = np.load(self.input_path)
@@ -53,6 +52,9 @@ class TradeData:
 
             for i in self.data:
                 wr.writerow(i)
+    def sample_from_data(self, start, freq):
+        self.data = self.data[start::freq]
+
 
     def save_np(self, output_path):
         np.save(output_path, self.data)
@@ -90,16 +92,12 @@ def create_small_dataset():
 
 if __name__ == "__main__":
     #create_small_dataset()
-    if True:
-<<<<<<< HEAD
+    # ALL_DATA = r"../data/BTC-USD.npy"
+    sine_data = r'./data/toy_sine.csv'
+    if False:
         dataset_small = r"../data/BTC-USD_VERY_SHORT.csv"
-        #dataset_small = r"../data/BTC-USD_SHORT.csv"
-        #dataset_small = r"../data/GDAX/BTC-USD.csv"
-=======
-        dataset_small = r"./data/BTC-USD_VERY_SHORT.csv"
-        dataset_small = r"./data/BTC-USD_SHORT.csv"
-        dataset_small = r"./data/GDAX/BTC-USD.csv"
->>>>>>> parent of 93821ec... update
+        dataset_small = r"../data/BTC-USD_SHORT.csv"
+        dataset_small = r"../data/GDAX/BTC-USD.csv"
 
         myData = TradeData(dataset_small)
         myData.data = np.asarray(myData.data)
@@ -108,15 +106,11 @@ if __name__ == "__main__":
         print((np.array(myData.data[::30])["price"]))
         print(myData.data[0]["price"])
         myData.generate_prices_at_time()
-<<<<<<< HEAD
         print(myData.prices_at_time)
 
-if __name__ == "__main__":
-    make_data()
-    myData = TradeData(ALL_DATA)
-    print(myData.data[0:10][0])
-    myData.sample_from_data(freq = 100, start = 10000)
-    myData.save_np(r"../data/BTC_USD_100_FREQ.npy")
-=======
-        print(myData.prices_at_time)
->>>>>>> parent of 93821ec... update
+    freq = 100
+    # myData = TradeData(ALL_DATA)
+    myData = TradeData(sine_data)
+    # myData.sample_from_data(freq = freq, start = 10000)
+    myData.save_np(r"./data/toy_sine.npy")
+    print("Done")

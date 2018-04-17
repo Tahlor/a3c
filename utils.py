@@ -63,7 +63,7 @@ class nextState():
         self.game_length = game_length
         self.hold_out_list = hold_out_list
         if hold_out_list is None:
-            self.hold_out_list = np.random.choice(self.game_numbers, self.number_of_holdouts, replace=False)
+            self.hold_out_list = self.state_range[0] + np.random.choice(self.game_numbers, self.number_of_holdouts, replace=False) * self.game_length
         self.no_random = no_random
         self.reset()
         self.hold_out_game_number = 0
