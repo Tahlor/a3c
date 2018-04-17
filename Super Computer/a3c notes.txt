@@ -1,12 +1,14 @@
-salloc --mem 16000M --time 2:00:00 --gres=gpu:2
+salloc --mem 32000M --time 2:00:00 --gres=gpu:2
 
-
+export PATH=~/anaconda3/bin:$PATH
 module load anaconda/3/4.3.1
 source activate conda3
 
 
 cd /fslhome/tarch/compute/678/a3c
-python3 main.py
+python3 main.py --init "./checkpoints/1" --validate_only True
+
+python3 main.py --init "./checkpoints/10"
 
 
 # Install
