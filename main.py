@@ -6,13 +6,15 @@ import os
 import shutil
 import matplotlib.pyplot as plt
 import tensorflow as tf
+
+from tensorflow.contrib.rnn import GRUCell
+import tensorflow.contrib.legacy_seq2seq as seq2seq
 from exchange import Exchange
 from utils import *
 import argparse
 import re
 
-#def setup_parameters():
-
+# PARAMETERS
 RESTORE_PATH = ""
 
 parser = argparse.ArgumentParser()
@@ -46,11 +48,13 @@ N_WORKERS = multiprocessing.cpu_count()  # number of workers
 MAX_EP_STEP = 1000  # maxumum number of steps per episode
 MAX_GLOBAL_EP = 1000000  # total number of episodes
 GLOBAL_NET_SCOPE = 'Global_Net'
-UPDATE_GLOBAL_ITER = MAX_EP_STEP/10  # sets how often the global net is updated (e.g. more often than 1 game)
+UPDATE_GLOBAL_ITER = 100  # sets how often the global net is updated (e.g. more often than 1 game)
 GAMMA = 0.1  # discount factor
 ENTROPY_BETA = 0.01  # entropy factor
 LR_A = 0.0001  # learning rate for actor
 LR_C = 0.001  # learning rate for critic
+N_LAYERS = 1 # number of layers in GRU implementation
+USE_NAIVE = False
 
 NUMBER_OF_NAIVE_INPUTS = 1
 NAIVE_LOOKBACK = 10
@@ -101,7 +105,7 @@ else:
 checkpoint_path = os.path.join(SAVE_FOLDER, 'model.ckpt')
 SUMMARY_WRITER = tf.summary.FileWriter(train_dir)
 
-    #globals().update(locals())
+
 
 # Network for the Actor Critic
 class ACNet(object):
@@ -362,7 +366,6 @@ if __name__ == "__main__":
         #global_episodes = int(re.search("(-)([0-9]+)(\.)", os.path.basename(ckpt.model_checkpoint_path)).group(2)) # scrape step pointer
         global_episodes = int(os.path.basename(ckpt.model_checkpoint_path).split('-')[1])
 
-        #global_episodes = tf.train.global_step()
 
 
     if not args.validate_only: # don't do full training

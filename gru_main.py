@@ -11,20 +11,25 @@ from tensorflow.contrib.rnn import GRUCell
 import tensorflow.contrib.legacy_seq2seq as seq2seq
 from exchange import Exchange
 from utils import *
+import argparse
+import re
 
 # PARAMETERS
 RESTORE_PATH = ""
-SAVE_FOLDER = "./checkpoints"
-if RESTORE_PATH!="":
-    SAVE_FOLDER = RESTORE_PATH
-else:
-    SAVE_FOLDER = createLogDir(basepath=SAVE_FOLDER)
 
-if not os.path.exists(SAVE_FOLDER):
-    os.makedirs(SAVE_FOLDER)
+parser = argparse.ArgumentParser()
+parser.add_argument('--init', type=str, default=RESTORE_PATH,
+                    help='initialize from old model')
 
-checkpoint_path = os.path.join(SAVE_FOLDER, 'model.ckpt')
-SAVE_FREQ = 10000 # for model checkpoints
+parser.add_argument('--validate_only', type=str2bool, default=False,
+                    help="don't train, just validate")
+
+parser.add_argument('--new_folder', type=str, default="",
+                    help="specify special folder")
+
+args = parser.parse_args()
+
+SAVE_FREQ = 5000 # for model checkpoints
 PRINT_FREQ = 100
 
 NEGATIVE_REWARD = False # naive
@@ -40,10 +45,10 @@ OUTPUT_GRAPH = False # safe logs
 RENDER = True  # render one worker
 LOG_DIR = './log'  # savelocation for logs
 N_WORKERS = multiprocessing.cpu_count()  # number of workers
-MAX_EP_STEP = 1000  # maxumum number of steps per episode
-MAX_GLOBAL_EP = 100000  # total number of episodes
+MAX_EP_STEP = 10000  # maxumum number of steps per episode
+MAX_GLOBAL_EP = 1000000  # total number of episodes
 GLOBAL_NET_SCOPE = 'Global_Net'
-UPDATE_GLOBAL_ITER = MAX_EP_STEP/10  # sets how often the global net is updated (e.g. more often than 1 game)
+UPDATE_GLOBAL_ITER = 100  # sets how often the global net is updated (e.g. more often than 1 game)
 GAMMA = 0.1  # discount factor
 ENTROPY_BETA = 0.01  # entropy factor
 LR_A = 0.0001  # learning rate for actor
@@ -53,9 +58,9 @@ USE_NAIVE = False
 
 NUMBER_OF_NAIVE_INPUTS = 1
 NAIVE_LOOKBACK = 10
-NUMBER_OF_HOLDOUTS = 30
+NUMBER_OF_HOLDOUTS = 100
 
-DATA = r"./data/BTC_USD_100_FREQ.npy"
+DATA = r"./data/BTC_USD_10_FREQ.npy"
 main_exchange = Exchange(DATA, time_interval=1, game_length=MAX_EP_STEP, naive_price_history=NAIVE_LOOKBACK,naive_inputs=NUMBER_OF_NAIVE_INPUTS, permit_short=PERMIT_SHORT, naive=False)
 global_state_manager = nextState(main_exchange.state_range, game_length=MAX_EP_STEP, hold_out_list=None,
                                   number_of_holdouts=NUMBER_OF_HOLDOUTS, no_random=True)
@@ -66,7 +71,33 @@ global_state_manager = nextState(main_exchange.state_range, game_length=MAX_EP_S
 N_S = (main_exchange.get_complete_state().shape)[0]  # number of states
 N_A = 1  # number of actions
 
-train_dir = createLogDir(basepath=LOG_DIR)
+
+RESTORE_PATH = args.init
+
+# PARAMETERS
+SAVE_FOLDER = "./checkpoints"
+if RESTORE_PATH!="":
+    SAVE_FOLDER = RESTORE_PATH
+else:
+    SAVE_FOLDER = createLogDir(basepath=SAVE_FOLDER)
+if not os.path.exists(SAVE_FOLDER):
+    os.makedirs(SAVE_FOLDER)
+
+
+## Make a whole new folder
+if args.new_folder != "":
+    train_dir = args.new_folder
+    SAVE_FOLDER = args.new_folder
+
+    # Make folder if it does not exist
+    if not os.path.exists(SAVE_FOLDER):
+        os.makedirs(SAVE_FOLDER)
+    else:
+        RESTORE_PATH = SAVE_FOLDER
+else:
+    train_dir = createLogDir(basepath=LOG_DIR)
+
+checkpoint_path = os.path.join(SAVE_FOLDER, 'model.ckpt')
 SUMMARY_WRITER = tf.summary.FileWriter(train_dir)
 
 
@@ -98,7 +129,7 @@ class ACNet(object):
 
 
                 with tf.name_scope('wrap_a_out'):
-                    mu, sigma = mu * A_BOUND[1], tf.minimum(sigma + 1e-4, 2)
+                    mu, sigma = mu * A_BOUND[1], tf.minimum(sigma + 1e-4, 1.5)
 
                 normal_dist = tf.contrib.distributions.Normal(mu, sigma)
 
@@ -120,6 +151,8 @@ class ACNet(object):
                 with tf.name_scope('choose_a'):  # use local params to choose action
                     self.A = tf.clip_by_value(tf.squeeze(normal_dist.sample(1), axis=0), A_BOUND[0],
                                               A_BOUND[1])  # sample a action from distribution
+                    self.A_mu = tf.squeeze(mu, axis=0)
+
                 with tf.name_scope('local_grad'):
                     self.a_grads = tf.gradients(self.a_loss,
                                                 self.a_params)  # calculate gradients for the network weights
@@ -175,9 +208,14 @@ class ACNet(object):
     def pull_global(self):  # run by a local
         self.sess.run([self.pull_a_params_op, self.pull_c_params_op])
 
-    def choose_action(self, s, a_state, c_state):  # run by a local
+    def choose_action(self, s, a_state, c_state, sample = True):  # run by a local
         s = s[np.newaxis, :]
-        a_return, a_state_return, c_state_return = self.sess.run([self.A, self.a_state, self.c_state], {self.s: s, self.a_gru_state_ph: a_state, self.c_gru_state_ph: c_state})
+        if sample:
+            a_return, a_state_return, c_state_return = self.sess.run([self.A, self.a_state, self.c_state], {self.s: s, self.a_gru_state_ph: a_state, self.c_gru_state_ph: c_state})
+        else:
+            a_return, a_state_return, c_state_return = self.sess.run([self.A_mu, self.a_state, self.c_state],
+                                                                     {self.s: s, self.a_gru_state_ph: a_state,
+                                                                      self.c_gru_state_ph: c_state})
         return a_return[0], a_state_return, c_state_return
 
 
@@ -279,7 +317,7 @@ class Worker(object):
                             print ("sd", summary_dict["sd"][:,0])
                             print ("Mu", summary_dict["mu"][:,0])
 
-                    if global_episodes % 100 == 0:
+                    if global_episodes % 50 == 0:
                         log(SUMMARY_WRITER, "profit", profit, global_episodes)
                         log(SUMMARY_WRITER, "a_loss", summary_dict["a_loss"], global_episodes)
                         log(SUMMARY_WRITER, "c_loss", summary_dict["c_loss"], global_episodes)
@@ -304,7 +342,7 @@ def graph():
     plt.show()
 
 def run_validation(sess, globalAC):
-
+    print("Running validation...")
     env = main_exchange.copy()  # make environment for each worker
     AC = ACNet("validation", sess, globalAC)  # create ACNet for each worker
     sess.run(tf.global_variables_initializer())
@@ -312,6 +350,8 @@ def run_validation(sess, globalAC):
     bot_profit_list = []
 
     for holdout in range(0, NUMBER_OF_HOLDOUTS):
+        if holdout % 10 == 0:
+            print("Running game {}...".format(holdout))
         start = global_state_manager.get_validation()
         end = start + MAX_EP_STEP
         s = env.reset(start)
@@ -320,7 +360,7 @@ def run_validation(sess, globalAC):
 
         local_profit = 0
         for ep_t in range(MAX_EP_STEP):
-            a = AC.choose_action(s)  # estimate stochastic action based on policy
+            a = [AC.choose_action(s, sample = False)]  # estimate stochastic action based on policy
 
             # Return State, Reward, _, _
             s_, r, done, info = env.step(a)
@@ -354,18 +394,22 @@ if __name__ == "__main__":
     if RESTORE_PATH != "":
         ckpt = tf.train.get_checkpoint_state(RESTORE_PATH )
         saver.restore(sess, ckpt.model_checkpoint_path)
+        #global_episodes = int(re.search("(-)([0-9]+)(\.)", os.path.basename(ckpt.model_checkpoint_path)).group(2)) # scrape step pointer
+        global_episodes = int(os.path.basename(ckpt.model_checkpoint_path).split('-')[1])
 
 
-    if OUTPUT_GRAPH:  # write log file
-        SUMMARY_WRITER.add_graph(sess.graph)
 
-    worker_threads = []
-    for worker in workers:  # start workers
-        job = lambda: worker.work()
-        t = threading.Thread(target=job)
-        t.start()
-        worker_threads.append(t)
-        #workers[1].get_status()
-    coord.join(worker_threads)  # wait for termination of workers
+    if not args.validate_only: # don't do full training
+        if OUTPUT_GRAPH:  # write log file
+            SUMMARY_WRITER.add_graph(sess.graph)
+
+        worker_threads = []
+        for worker in workers:  # start workers
+            job = lambda: worker.work()
+            t = threading.Thread(target=job)
+            t.start()
+            worker_threads.append(t)
+            #workers[1].get_status()
+        coord.join(worker_threads)  # wait for termination of workers
     run_validation(sess, global_ac)
     # graph()
