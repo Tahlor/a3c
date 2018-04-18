@@ -32,6 +32,8 @@ args = parser.parse_args()
 SAVE_FREQ = 5000 # for model checkpoints
 PRINT_FREQ = 100
 
+VALIDATION_GAME_LENGTH = 3800000
+
 NEGATIVE_REWARD = False # naive
 value_activation = None if NEGATIVE_REWARD else tf.nn.relu
 #value_activation = None
@@ -45,10 +47,14 @@ OUTPUT_GRAPH = False # safe logs
 RENDER = True  # render one worker
 LOG_DIR = './log'  # savelocation for logs
 N_WORKERS = multiprocessing.cpu_count()  # number of workers
-MAX_EP_STEP = 1000  # maxumum number of steps per episode
-MAX_GLOBAL_EP = 1000000  # total number of episodes
+
+if args.validate_only:
+    N_WORKERS = 1
+
+MAX_EP_STEP = 100  # maxumum number of steps per episode
+MAX_GLOBAL_EP = 1000  # total number of episodes
 GLOBAL_NET_SCOPE = 'Global_Net'
-UPDATE_GLOBAL_ITER = 100  # sets how often the global net is updated (e.g. more often than 1 game)
+UPDATE_GLOBAL_ITER = 50  # sets how often the global net is updated (e.g. more often than 1 game)
 GAMMA = 0.1  # discount factor
 ENTROPY_BETA = 0.01  # entropy factor
 LR_A = 0.0001  # learning rate for actor
@@ -58,7 +64,7 @@ USE_NAIVE = False
 
 NUMBER_OF_NAIVE_INPUTS = 1
 NAIVE_LOOKBACK = 10
-NUMBER_OF_HOLDOUTS = 100
+NUMBER_OF_HOLDOUTS = 1
 
 DATA = r"./data/BTC_USD_10_FREQ.npy"
 main_exchange = Exchange(data_stream=DATA, time_interval=1, game_length=MAX_EP_STEP, naive_price_history=NAIVE_LOOKBACK,naive_inputs=NUMBER_OF_NAIVE_INPUTS, permit_short=PERMIT_SHORT, naive= True)
@@ -217,7 +223,7 @@ class Worker(object):
             end = start + MAX_EP_STEP
             s = self.env.reset(start)
             ep_r = 0
-            for ep_t in range(MAX_EP_STEP):
+            for ep_t in range(1000):
                 # Render one worker
                 #if self.name == 'W_0' and RENDER:
                 #    self.env.render()
@@ -230,7 +236,6 @@ class Worker(object):
 
                 if not NEGATIVE_REWARD and False:
                     r = max(r, 0)
-
                 ep_r += r
                 # save actions, states and rewards in buffer
                 buffer_s.append(s)
@@ -267,6 +272,7 @@ class Worker(object):
                     buy_and_hold = 10000 * self.env.vanilla_prices[end]/self.env.vanilla_prices[start] - 10000
                     profit = self.env.get_profit()
                     profits.append(profit)
+                    print(buy_and_hold, profit, self.env.vanilla_prices[end], self.env.vanilla_prices[start])
                     profits_above_baseline.append(profit-buy_and_hold)
 
                     if len(global_rewards) < 5:  # record running episode reward
@@ -322,18 +328,20 @@ def run_validation(sess, globalAC):
         if holdout % 10 == 0:
             print("Running game {}...".format(holdout))
         start = state_manager.get_validation()
-        end = start + MAX_EP_STEP
+        end = start + VALIDATION_GAME_LENGTH
         s = env.reset(start)
         buy_and_hold_gain = 10000 * (env.vanilla_prices[end]/env.vanilla_prices[start]) - 10000
         buy_and_hold_list.append(buy_and_hold_gain)
 
-        local_profit = 0
-        for ep_t in range(MAX_EP_STEP):
+        #actions = []
+        for ep_t in range(VALIDATION_GAME_LENGTH):
+            #a = AC.choose_action(s, sample=True)
             a = [AC.choose_action(s, sample = False)]  # estimate stochastic action based on policy
-
             # Return State, Reward, _, _
-            s_, r, done, info = env.step(a)
-            local_profit += r
+            s, r, done, info = env.step(a)
+            #print(a)
+            #actions.append(a)
+        local_profit = env.get_profit()
         bot_profit_list.append(local_profit)
 
     print("Total profit (learned): {}".format(sum(bot_profit_list)))
@@ -358,8 +366,8 @@ if __name__ == "__main__":
 
     coord = tf.train.Coordinator()
     sess.run(tf.global_variables_initializer())
-
     saver = tf.train.Saver(tf.global_variables())
+
     if RESTORE_PATH != "":
         ckpt = tf.train.get_checkpoint_state(RESTORE_PATH )
         try:
@@ -367,8 +375,6 @@ if __name__ == "__main__":
             global_episodes = int(os.path.basename(ckpt.model_checkpoint_path).split('-')[1])
         except:
             print("Could not restore")
-
-
 
     if not args.validate_only: # don't do full training
         if OUTPUT_GRAPH:  # write log file
@@ -384,8 +390,10 @@ if __name__ == "__main__":
             #workers[1].get_status()
         coord.join(worker_threads)  # wait for termination of workers
     else:
-        # should load which states, bleh
-        state_manager = nextState(main_exchange.state_range, game_length=1000, hold_out_list=[30000*x for x in range(1,100)],
+        h = [150000*x for x in range(1,21)]
+        h = [30000*x for x in range(1,101)]
+        h =[5000]
+        state_manager = nextState(main_exchange.state_range, game_length=VALIDATION_GAME_LENGTH, hold_out_list=h,
                                   number_of_holdouts=NUMBER_OF_HOLDOUTS)
 
     run_validation(sess, global_ac)

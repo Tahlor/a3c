@@ -9,7 +9,7 @@ class mygru( RNNCell ):
         #super(BasicLSTMCell, self).__init__(_reuse=reuse)
         #super(mygru, self).__init__(_reuse=reuse)
     
-        with tf.variable_scope(scope_name) as scope: 
+        with tf.variable_scope(scope_name, reuse=tf.AUTO_REUSE) as scope:
             i = tf.random_uniform_initializer(-1e-3, 1e-3)
             self.s_d = s_d
             bs = b_s

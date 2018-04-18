@@ -18,6 +18,7 @@ from gru_class import  mygru
 # PARAMETERS
 USE_ONE_GRU = True
 RESTORE_PATH = ""
+MY_GRU = True
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--init', type=str, default=RESTORE_PATH,
@@ -46,8 +47,11 @@ CRITIC_NODES = 200 #100
 OUTPUT_GRAPH = False # safe logs
 RENDER = True  # render one worker
 LOG_DIR = './log'  # savelocation for logs
-N_WORKERS = int(multiprocessing.cpu_count()/2)  # number of workers
 N_WORKERS = int(multiprocessing.cpu_count())
+
+if args.validate_only:
+    N_WORKERS = 1
+
 MAX_EP_STEP = 10000  # maxumum number of steps per episode
 MAX_GLOBAL_EP = 1000000  # total number of episodes
 GLOBAL_NET_SCOPE = 'Global_Net'
@@ -61,7 +65,7 @@ USE_NAIVE = False
 
 NUMBER_OF_NAIVE_INPUTS = 1
 NAIVE_LOOKBACK = 10
-NUMBER_OF_HOLDOUTS = 100
+NUMBER_OF_HOLDOUTS = 20
 
 DATA = r"./data/BTC_USD_10_FREQ.npy"
 main_exchange = Exchange(DATA, time_interval=1, game_length=MAX_EP_STEP, naive_price_history=NAIVE_LOOKBACK,naive_inputs=NUMBER_OF_NAIVE_INPUTS, permit_short=PERMIT_SHORT, naive=False)
@@ -176,8 +180,11 @@ class ACNet(object):
             gru_cells = []
             for _ in range(num_layers):
                 #GRUCell, mygru
-                #gru_cells.append(GRUCell(state_dim, activation=activation, kernel_initializer=kernel_initializer))
-                gru_cells.append(mygru(5, 1, state_dim ))
+                if MY_GRU:
+                    gru_cells.append(mygru(5, 1, state_dim))
+                else:
+                    gru_cells.append(GRUCell(state_dim, activation=activation, kernel_initializer=kernel_initializer))
+
 
             gru = tf.nn.rnn_cell.MultiRNNCell(gru_cells)
             output, final_state = seq2seq.rnn_decoder(input, tuple(state_ph for _ in range(1)), gru)
@@ -257,7 +264,7 @@ class Worker(object):
         while not coord.should_stop() and global_episodes < MAX_GLOBAL_EP:
             start = self.state_manager.get_next()
             end = start + MAX_EP_STEP
-            s = self.env.reset(start)
+            s_ = self.env.reset(start)
             ep_r = 0
             for ep_t in range(MAX_EP_STEP):
                 # Render one worker
@@ -267,7 +274,7 @@ class Worker(object):
                 a, a_state, c_state = self.AC.choose_action(s, a_state, c_state)  # estimate stochastic action based on policy
 
                 # Return State, Reward, _, _
-                s_, r, done, info = self.env.step(a)  # make step in environment
+                s, r, done, info = self.env.step(a)  # make step in environment
                 done = True if ep_t == MAX_EP_STEP - 1 else False
 
                 if not NEGATIVE_REWARD and False:
@@ -363,6 +370,8 @@ def run_validation(sess, globalAC):
     sess.run(tf.global_variables_initializer())
     buy_and_hold_list = []
     bot_profit_list = []
+    #a_state = sess.run([AC.a_state])
+    #c_state = sess.run([AC.c_state])
     a_state = np.zeros([1, ACTOR_NODES])
     c_state = np.zeros([1, CRITIC_NODES])
     if USE_ONE_GRU:
@@ -372,18 +381,18 @@ def run_validation(sess, globalAC):
             print("Running game {}...".format(holdout))
         start = global_state_manager.get_validation()
         end = start + MAX_EP_STEP
-        s = env.reset(start)
+        s = env.reset(start-1000) # prime it for 1,000
         buy_and_hold_gain = 10000 * (env.vanilla_prices[end]/env.vanilla_prices[start]) - 10000
         buy_and_hold_list.append(buy_and_hold_gain)
 
-        local_profit = 0
-        for ep_t in range(MAX_EP_STEP):
-            [a],_,_ = AC.choose_action(s, a_state=a_state, c_state=c_state, sample = False)  # estimate stochastic action based on policy
+        for ep_t in range(2000):
+            a,a_state,c_state = AC.choose_action(s, a_state=a_state, c_state=c_state, sample = False)  # estimate stochastic action based on policy
 
             # Return State, Reward, _, _
-            s_, r, done, info = env.step(a)
-            local_profit += r
-        bot_profit_list.append(local_profit)
+            s, r, done, info = env.step([a])
+            if env.state == start:
+                env.cash = 10000 # reset
+        bot_profit_list.append(env.get_profit())
 
     print("Total profit (learned): {}".format(sum(bot_profit_list)))
     print("Total profit (buy and hold): {}".format(sum(buy_and_hold_list)))
@@ -413,8 +422,10 @@ if __name__ == "__main__":
             i_name = 'W_%i' % i  # worker name
             workers.append(Worker(i_name, global_ac, sess))
 
-    coord = tf.train.Coordinator()
-    sess.run(tf.global_variables_initializer())
+        coord = tf.train.Coordinator()
+
+    if not args.validate_only:
+        sess.run(tf.global_variables_initializer())
 
     saver = tf.train.Saver(tf.global_variables())
     if RESTORE_PATH != "":
@@ -424,8 +435,9 @@ if __name__ == "__main__":
             global_episodes = int(os.path.basename(ckpt.model_checkpoint_path).split('-')[1])
         except:
             print("Could not restore")
-
-
+            import traceback
+            traceback.print_exc()
+            STOP
 
 
     if not args.validate_only: # don't do full training
@@ -441,8 +453,7 @@ if __name__ == "__main__":
             #workers[1].get_status()
         coord.join(worker_threads)  # wait for termination of workers
     else:
-        # should load which states, bleh
-        state_manager = nextState(main_exchange.state_range, game_length=1000, hold_out_list=[30000*x for x in range(1,100)],
+        state_manager = nextState(main_exchange.state_range, game_length=1000, hold_out_list=[150000*x for x in range(1,21)],
                                   number_of_holdouts=NUMBER_OF_HOLDOUTS)
     run_validation(sess, global_ac)
     # graph()

@@ -1,13 +1,15 @@
-salloc --mem 32000M --time 2:00:00 --gres=gpu:2
+salloc --mem 32000M --time 4:00:00 --gres=gpu:0
 
 module purge
 module load anaconda/3/4.3.1
 export PATH=~/anaconda3/bin:$PATH
 source activate conda3
-
-
 cd /fslhome/tarch/compute/678/a3c
+
+
+
 python3 main.py --init "./checkpoints/1" --validate_only True
+
 
 python3 main.py --init "./checkpoints/10"
 
@@ -31,4 +33,15 @@ python3 main.py --init "./checkpoints/3" --validate_only True
 update.entrydns.net
 
 cd /fslhome/tarch/compute/678/a3c
-python -u gru_main.py --new_folder "./MASTERGRU"
+python -u gru_main.py --init "./MASTERGRU" --validate_only True
+python -u gru_main.py --init "./MYGRU" --validate_only True
+python -u main.py --init "./official_run_new" --validate_only True
+
+
+
+python3 main.py --new_folder "./FINAL_NAIVE"
+
+
+python3 main.py --new_folder "./FINAL_GRU"
+
+official_run_new
